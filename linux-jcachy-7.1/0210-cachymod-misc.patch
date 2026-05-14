@@ -1,0 +1,333 @@
+Switch to gnu17, a GCC bug-fix version of the C11 standard.
+
+What is C17 and what changes have been made to the language?
+https://stackoverflow.com/questions/47529854/
+
+Signed-off-by: Mario Roy <...>
+
+Curated patches from ZEN/XanMod/SUNLIGHT
+
+ZEN: INTERACTIVE: Tune ondemand governor for interactivity
+ZEN: dm-crypt: Disable workqueues for crypto ops
+XANMOD: block/mq-deadline: Increase write priority, disable front_merges
+XANMOD: block: Set rq_affinity to force complete I/O on same CPU
+XANMOD: blk-wbt: Set wbt_default_latency_nsec() to 2msec
+XANMOD: vfs: Decrease rate at which vfs caches are reclaimed
+XANMOD: lib/kconfig.debug: disable default SYMBOLIC_ERRNAME and DEBUG_BUGVERBOSE
+SUNLIGHT: x86/tsc: Use rdtsc_ordered() when RDTSCP or LFENCE_RDTSC are supported
+SUNLIGHT: processor_idle: Skip dummy wait for Zen microarchitecture
+Revert sched: update rq->avg_idle when a task is moved to an idle CPU
+Revert tcp: give up on stronger sk_rcvbuf checks (for now)
+Add Logitech C310 USB quirk
+Speed up zstd compression
+
+diff --git i/Makefile w/Makefile
+index dbd58c292d..b8fe194eb8 100644
+--- i/Makefile
++++ w/Makefile
+@@ -467,7 +467,7 @@ KERNELDOC       = $(srctree)/tools/docs/kernel-doc
+ export KERNELDOC
+ 
+ KBUILD_USERHOSTCFLAGS := -Wall -Wmissing-prototypes -Wstrict-prototypes \
+-			 -O2 -fomit-frame-pointer -std=gnu11
++			 -O2 -fomit-frame-pointer -std=gnu17
+ KBUILD_USERCFLAGS  := $(KBUILD_USERHOSTCFLAGS) $(USERCFLAGS)
+ KBUILD_USERLDFLAGS := $(USERLDFLAGS)
+ 
+@@ -801,7 +801,7 @@ ifdef need-config
+ include $(objtree)/include/config/auto.conf
+ endif
+ 
+-CC_FLAGS_DIALECT := -std=gnu11
++CC_FLAGS_DIALECT := -std=gnu17
+ # Allow including a tagged struct or union anonymously in another struct/union.
+ CC_FLAGS_DIALECT += $(CONFIG_CC_MS_EXTENSIONS)
+ # Clang enables warnings about GNU and Microsoft extensions by default, disable
+diff --git i/arch/x86/include/asm/tsc.h w/arch/x86/include/asm/tsc.h
+index 4f7f09f505..46478b9ed8 100644
+--- i/arch/x86/include/asm/tsc.h
++++ w/arch/x86/include/asm/tsc.h
+@@ -79,6 +79,9 @@ static inline cycles_t get_cycles(void)
+ 	if (!IS_ENABLED(CONFIG_X86_TSC) &&
+ 	    !cpu_feature_enabled(X86_FEATURE_TSC))
+ 		return 0;
++	if (cpu_feature_enabled(X86_FEATURE_LFENCE_RDTSC) ||
++	    cpu_feature_enabled(X86_FEATURE_RDTSCP))
++		return rdtsc_ordered();
+ 	return rdtsc();
+ }
+ #define get_cycles get_cycles
+diff --git i/block/blk-wbt.c w/block/blk-wbt.c
+index dcc2438ca1..267466a0bc 100644
+--- i/block/blk-wbt.c
++++ w/block/blk-wbt.c
+@@ -798,12 +798,7 @@ void wbt_init_enable_default(struct gendisk *disk)
+ 
+ static u64 wbt_default_latency_nsec(struct request_queue *q)
+ {
+-	/*
+-	 * We default to 2msec for non-rotational storage, and 75msec
+-	 * for rotational storage.
+-	 */
+-	if (blk_queue_rot(q))
+-		return 75000000ULL;
++	/* XanMod defaults to 2msec for any type of storage */
+ 	return 2000000ULL;
+ }
+ 
+diff --git i/block/mq-deadline.c w/block/mq-deadline.c
+index 95917a8897..5c656f03ec 100644
+--- i/block/mq-deadline.c
++++ w/block/mq-deadline.c
+@@ -28,7 +28,7 @@
+  * See Documentation/block/deadline-iosched.rst
+  */
+ static const int read_expire = HZ / 2;  /* max time before a read is submitted. */
+-static const int write_expire = 5 * HZ; /* ditto for writes, these limits are SOFT! */
++static const int write_expire = HZ;     /* ditto for writes, these limits are SOFT! */
+ /*
+  * Time after which to dispatch lower priority requests even if higher
+  * priority requests are pending.
+@@ -549,7 +549,7 @@ static int dd_init_sched(struct request_queue *q, struct elevator_queue *eq)
+ 	dd->fifo_expire[DD_READ] = read_expire;
+ 	dd->fifo_expire[DD_WRITE] = write_expire;
+ 	dd->writes_starved = writes_starved;
+-	dd->front_merges = 1;
++	dd->front_merges = 0;
+ 	dd->last_dir = DD_WRITE;
+ 	dd->fifo_batch = fifo_batch;
+ 	dd->prio_aging_expire = prio_aging_expire;
+diff --git i/drivers/acpi/processor_idle.c w/drivers/acpi/processor_idle.c
+index ef93548af2..349792a215 100644
+--- i/drivers/acpi/processor_idle.c
++++ w/drivers/acpi/processor_idle.c
+@@ -524,8 +524,11 @@ static __cpuidle void io_idle(unsigned long addr)
+ 	inb(addr);
+ 
+ #ifdef	CONFIG_X86
+-	/* No delay is needed if we are in guest */
+-	if (boot_cpu_has(X86_FEATURE_HYPERVISOR))
++	/*
++	 * No delay is needed if we are in guest or on a processor
++	 * based on the Zen microarchitecture.
++	 */
++	if (boot_cpu_has(X86_FEATURE_HYPERVISOR) || boot_cpu_has(X86_FEATURE_ZEN))
+ 		return;
+ 	/*
+ 	 * Modern (>=Nehalem) Intel systems use ACPI via intel_idle,
+diff --git i/drivers/cpufreq/cpufreq_ondemand.c w/drivers/cpufreq/cpufreq_ondemand.c
+index 9942dbb38d..0c8782fab7 100644
+--- i/drivers/cpufreq/cpufreq_ondemand.c
++++ w/drivers/cpufreq/cpufreq_ondemand.c
+@@ -18,10 +18,10 @@
+ #include "cpufreq_ondemand.h"
+ 
+ /* On-demand governor macros */
+-#define DEF_FREQUENCY_UP_THRESHOLD		(80)
+-#define DEF_SAMPLING_DOWN_FACTOR		(1)
++#define DEF_FREQUENCY_UP_THRESHOLD		(55)
++#define DEF_SAMPLING_DOWN_FACTOR		(5)
+ #define MAX_SAMPLING_DOWN_FACTOR		(100000)
+-#define MICRO_FREQUENCY_UP_THRESHOLD		(95)
++#define MICRO_FREQUENCY_UP_THRESHOLD		(60)
+ #define MIN_FREQUENCY_UP_THRESHOLD		(1)
+ #define MAX_FREQUENCY_UP_THRESHOLD		(100)
+ 
+diff --git i/drivers/md/dm-crypt.c w/drivers/md/dm-crypt.c
+index 608b617fb8..787f881be9 100644
+--- i/drivers/md/dm-crypt.c
++++ w/drivers/md/dm-crypt.c
+@@ -3226,6 +3226,9 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
+ 			goto bad;
+ 	}
+ 
++	set_bit(DM_CRYPT_NO_READ_WORKQUEUE, &cc->flags);
++	set_bit(DM_CRYPT_NO_WRITE_WORKQUEUE, &cc->flags);
++
+ 	ret = crypt_ctr_cipher(ti, argv[0], argv[1]);
+ 	if (ret < 0)
+ 		goto bad;
+diff --git i/drivers/usb/core/quirks.c w/drivers/usb/core/quirks.c
+index 0ffdaefba5..5cc7881cae 100644
+--- i/drivers/usb/core/quirks.c
++++ w/drivers/usb/core/quirks.c
+@@ -273,6 +273,9 @@ static const struct usb_device_id usb_quirk_list[] = {
+ 	/* Logitech Harmony 700-series */
+ 	{ USB_DEVICE(0x046d, 0xc122), .driver_info = USB_QUIRK_DELAY_INIT },
+ 
++	/* Logitech Webcam C310 */
++	{ USB_DEVICE(0x046d, 0x081b), .driver_info = USB_QUIRK_RESET_RESUME },
++
+ 	/* Philips PSC805 audio device */
+ 	{ USB_DEVICE(0x0471, 0x0155), .driver_info = USB_QUIRK_RESET_RESUME },
+ 
+diff --git i/fs/dcache.c w/fs/dcache.c
+index 2c61aeea41..a2535f5166 100644
+--- i/fs/dcache.c
++++ w/fs/dcache.c
+@@ -73,7 +73,7 @@
+  * If no ancestor relationship:
+  * arbitrary, since it's serialized on rename_lock
+  */
+-static int sysctl_vfs_cache_pressure __read_mostly = 100;
++static int sysctl_vfs_cache_pressure __read_mostly = 50;
+ static int sysctl_vfs_cache_pressure_denom __read_mostly = 100;
+ 
+ unsigned long vfs_pressure_ratio(unsigned long val)
+diff --git i/include/linux/blkdev.h w/include/linux/blkdev.h
+index 890128cdea..ea53d79657 100644
+--- i/include/linux/blkdev.h
++++ w/include/linux/blkdev.h
+@@ -678,7 +678,8 @@ enum {
+ 	QUEUE_FLAG_MAX
+ };
+ 
+-#define QUEUE_FLAG_MQ_DEFAULT	(1UL << QUEUE_FLAG_SAME_COMP)
++#define QUEUE_FLAG_MQ_DEFAULT	((1UL << QUEUE_FLAG_SAME_COMP) |		\
++				 (1UL << QUEUE_FLAG_SAME_FORCE))
+ 
+ void blk_queue_flag_set(unsigned int flag, struct request_queue *q);
+ void blk_queue_flag_clear(unsigned int flag, struct request_queue *q);
+diff --git i/kernel/sched/core.c w/kernel/sched/core.c
+index def3101fed..b3a43529b1 100644
+--- i/kernel/sched/core.c
++++ w/kernel/sched/core.c
+@@ -3697,21 +3697,6 @@ static inline void ttwu_do_wakeup(struct task_struct *p)
+ 	trace_sched_wakeup(p);
+ }
+ 
+-void update_rq_avg_idle(struct rq *rq)
+-{
+-	if (!rq->idle_stamp)
+-		return;
+-
+-	u64 delta = rq_clock(rq) - rq->idle_stamp;
+-	u64 max = 2*rq->max_idle_balance_cost;
+-
+-	update_avg(&rq->avg_idle, delta);
+-
+-	if (rq->avg_idle > max)
+-		rq->avg_idle = max;
+-	rq->idle_stamp = 0;
+-}
+-
+ static void
+ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
+ 		 struct rq_flags *rf)
+@@ -3747,6 +3732,18 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
+ 		p->sched_class->task_woken(rq, p);
+ 		rq_repin_lock(rq, rf);
+ 	}
++
++	if (rq->idle_stamp) {
++		u64 delta = rq_clock(rq) - rq->idle_stamp;
++		u64 max = 2*rq->max_idle_balance_cost;
++
++		update_avg(&rq->avg_idle, delta);
++
++		if (rq->avg_idle > max)
++			rq->avg_idle = max;
++
++		rq->idle_stamp = 0;
++	}
+ }
+ 
+ /*
+diff --git i/kernel/sched/idle.c w/kernel/sched/idle.c
+index 912b2a8464..44fc253a59 100644
+--- i/kernel/sched/idle.c
++++ w/kernel/sched/idle.c
+@@ -491,7 +491,6 @@ static void put_prev_task_idle(struct rq *rq, struct task_struct *prev, struct t
+ {
+ 	update_curr_idle(rq);
+ 	scx_update_idle(rq, false, true);
+-	update_rq_avg_idle(rq);
+ }
+ 
+ static void set_next_task_idle(struct rq *rq, struct task_struct *next, bool first)
+diff --git i/kernel/sched/sched.h w/kernel/sched/sched.h
+index 8e45a6ed9f..bff3db12f0 100644
+--- i/kernel/sched/sched.h
++++ w/kernel/sched/sched.h
+@@ -1734,7 +1734,6 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
+ 
+ #endif /* !CONFIG_FAIR_GROUP_SCHED */
+ 
+-extern void update_rq_avg_idle(struct rq *rq);
+ extern void update_rq_clock(struct rq *rq);
+ 
+ /*
+diff --git i/lib/Kconfig.debug w/lib/Kconfig.debug
+index 7756b5e9ab..0f2cfe97c7 100644
+--- i/lib/Kconfig.debug
++++ w/lib/Kconfig.debug
+@@ -202,7 +202,7 @@ config DYNAMIC_DEBUG_CORE
+ 
+ config SYMBOLIC_ERRNAME
+ 	bool "Support symbolic error names in printf"
+-	default y if PRINTK
++	default n
+ 	help
+ 	  If you say Y here, the kernel's printf implementation will
+ 	  be able to print symbolic error names such as ENOSPC instead
+@@ -212,7 +212,7 @@ config SYMBOLIC_ERRNAME
+ config DEBUG_BUGVERBOSE
+ 	bool "Verbose BUG() reporting (adds 70K)" if DEBUG_KERNEL
+ 	depends on BUG && (GENERIC_BUG || HAVE_DEBUG_BUGVERBOSE)
+-	default y
++	default n
+ 	help
+ 	  Say Y here to make BUG() panics output the file name and line number
+ 	  of the BUG call as well as the EIP and oops trace.  This aids
+diff --git i/net/ipv4/tcp_input.c w/net/ipv4/tcp_input.c
+index 9fed91dec5..1234ace24c 100644
+--- i/net/ipv4/tcp_input.c
++++ w/net/ipv4/tcp_input.c
+@@ -5349,11 +5349,25 @@ static void tcp_ofo_queue(struct sock *sk)
+ static bool tcp_prune_ofo_queue(struct sock *sk, const struct sk_buff *in_skb);
+ static int tcp_prune_queue(struct sock *sk, const struct sk_buff *in_skb);
+ 
++/* Check if this incoming skb can be added to socket receive queues
++ * while satisfying sk->sk_rcvbuf limit.
++ *
++ * In theory we should use skb->truesize, but this can cause problems
++ * when applications use too small SO_RCVBUF values.
++ * When LRO / hw gro is used, the socket might have a high tp->scaling_ratio,
++ * allowing RWIN to be close to available space.
++ * Whenever the receive queue gets full, we can receive a small packet
++ * filling RWIN, but with a high skb->truesize, because most NIC use 4K page
++ * plus sk_buff metadata even when receiving less than 1500 bytes of payload.
++ *
++ * Note that we use skb->len to decide to accept or drop this packet,
++ * but sk->sk_rmem_alloc is the sum of all skb->truesize.
++ */
+ static bool tcp_can_ingest(const struct sock *sk, const struct sk_buff *skb)
+ {
+ 	unsigned int rmem = atomic_read(&sk->sk_rmem_alloc);
+ 
+-	return rmem <= sk->sk_rcvbuf;
++	return rmem + skb->len <= sk->sk_rcvbuf;
+ }
+ 
+ static int tcp_try_rmem_schedule(struct sock *sk, const struct sk_buff *skb,
+diff --git i/scripts/Makefile.lib w/scripts/Makefile.lib
+index b36c7c6817..4b0281cfe2 100644
+--- i/scripts/Makefile.lib
++++ w/scripts/Makefile.lib
+@@ -469,13 +469,13 @@ quiet_cmd_xzmisc = XZMISC  $@
+ # be used because it would require zstd to allocate a 128 MB buffer.
+ 
+ quiet_cmd_zstd = ZSTD    $@
+-      cmd_zstd = cat $(real-prereqs) | $(ZSTD) -19 > $@
++      cmd_zstd = cat $(real-prereqs) | $(ZSTD) -6 > $@
+ 
+ quiet_cmd_zstd22 = ZSTD22  $@
+-      cmd_zstd22 = cat $(real-prereqs) | $(ZSTD) -22 --ultra > $@
++      cmd_zstd22 = cat $(real-prereqs) | $(ZSTD) -6 --ultra > $@
+ 
+ quiet_cmd_zstd22_with_size = ZSTD22  $@
+-      cmd_zstd22_with_size = { cat $(real-prereqs) | $(ZSTD) -22 --ultra; $(size_append); } > $@
++      cmd_zstd22_with_size = { cat $(real-prereqs) | $(ZSTD) -6 --ultra; $(size_append); } > $@
+ 
+ # ASM offsets
+ # ---------------------------------------------------------------------------

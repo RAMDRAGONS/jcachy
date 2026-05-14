@@ -1,0 +1,12 @@
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 23456789..34567890 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -8,6 +8,7 @@
+  * Copyright (C) 2015-2018, EfficiOS Inc.,
+  * Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+  */
++/* RSEQ fixes merged upstream in 7.1 */
+ 
+ /*
+  * Restartable sequences are a lightweight interface that allows

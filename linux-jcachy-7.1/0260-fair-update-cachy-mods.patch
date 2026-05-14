@@ -1,0 +1,44 @@
+diff --git i/init/init_task.c w/init/init_task.c
+index b5f48ebdc2..725c0b4eba 100644
+--- i/init/init_task.c
++++ w/init/init_task.c
+@@ -170,7 +170,7 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
+ 	INIT_CPU_TIMERS(init_task)
+ 	.pi_lock	= __RAW_SPIN_LOCK_UNLOCKED(init_task.pi_lock),
+ 	.blocked_lock	= __RAW_SPIN_LOCK_UNLOCKED(init_task.blocked_lock),
+-	.timer_slack_ns = 50000, /* 50 usec default slack */
++	.timer_slack_ns = 31250, /* 31.25 usec default slack */
+ 	.thread_pid	= &init_struct_pid,
+ 	.thread_node	= LIST_HEAD_INIT(init_signals.thread_head),
+ #ifdef CONFIG_AUDIT
+diff --git i/kernel/sched/fair.c w/kernel/sched/fair.c
+index 707cea5cbc..eeff8d55b5 100644
+--- i/kernel/sched/fair.c
++++ w/kernel/sched/fair.c
+@@ -75,11 +75,7 @@
+  * BORE : default SCHED_TUNABLESCALING_NONE = *1 constant
+  * EEVDF: default SCHED_TUNABLESCALING_LOG  = *(1+ilog(ncpus))
+  */
+-#ifdef CONFIG_SCHED_BORE
+ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_NONE;
+-#else /* !CONFIG_SCHED_BORE */
+-unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
+-#endif /* CONFIG_SCHED_BORE */
+ 
+ /*
+  * Minimal preemption granularity for CPU-bound tasks:
+@@ -93,11 +89,11 @@ static const unsigned int nsecs_per_tick       = 1000000000ULL / HZ;
+ unsigned int sysctl_sched_min_base_slice       = CONFIG_MIN_BASE_SLICE_NS;
+ __read_mostly uint sysctl_sched_base_slice     = nsecs_per_tick;
+ #else /* !CONFIG_SCHED_BORE */
+-unsigned int sysctl_sched_base_slice			= 700000ULL;
+-static unsigned int normalized_sysctl_sched_base_slice	= 700000ULL;
++unsigned int sysctl_sched_base_slice			= 800000000ULL / HZ * (HZ > 500? 2: 1);
++static unsigned int normalized_sysctl_sched_base_slice	= 800000000ULL / HZ * (HZ > 500? 2: 1);
+ #endif /* CONFIG_SCHED_BORE */
+ 
+-__read_mostly unsigned int sysctl_sched_migration_cost	= 500000UL;
++__read_mostly unsigned int sysctl_sched_migration_cost	= 400000UL;
+ 
+ static int __init setup_sched_thermal_decay_shift(char *str)
+ {
