@@ -137,8 +137,8 @@ fi
 _pkgsuffix=jcachy
 _major=7.1
 #_minor=6
-_tagrel=2
-_rcver="rc3"
+_tagrel=1
+_rcver="rc4"
 pkgver=${_major}.${_minor}
 
 pkgdesc='JCachy Linux Kernel with other patches and improvements'
@@ -187,7 +187,7 @@ source=(
     "0001-linux7.1-rc1-lru_marie-0.1.5.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
 
-    # The revert is applied only if a BORE patch is detected via extra_patch_or_url
+    # The revert is applied only if BORE patch is selected
     "0360-fair-revert-cachy-mods.patch"
 )
 
