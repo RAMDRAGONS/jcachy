@@ -1,5 +1,134 @@
+From: Shengming Hu <hu.shengming@xxxxxxxxxx>
+Date: Thu, 30 Apr 2026 22:04:41 +0800 (CST)
+Subject: mm/slub: defer freelist construction until after bulk allocation
+ from a new slab
+Link: https://lore.kernel.org/all/202604302204413066CxdJnJ3RAGH_7iE4EBIO@zte.com.cn/
+
+Allocations from a fresh slab can consume all of its objects, and the
+freelist built during slab allocation is discarded immediately as a result.
+
+Instead of special-casing the whole-slab bulk refill case, defer freelist
+construction until after objects are emitted from a fresh slab.
+new_slab() now only allocates the slab and initializes its metadata.
+refill_objects() then obtains a fresh slab and lets alloc_from_new_slab()
+emit objects directly, building a freelist only for the objects left
+unallocated; the same change is applied to alloc_single_from_new_slab().
+
+To keep CONFIG_SLAB_FREELIST_RANDOM=y/n on the same path, introduce a
+small iterator abstraction for walking free objects in allocation order.
+The iterator is used both for filling the sheaf and for building the
+freelist of the remaining objects.
+
+Also mark setup_object() inline. After this optimization, the compiler no
+longer consistently inlines this helper in the hot path, which can hurt
+performance. Explicitly marking it inline restores the expected code
+generation.
+
+This reduces per-object overhead when allocating from a fresh slab.
+The most direct benefit is in the paths that allocate objects first and
+only build a freelist for the remainder afterward: bulk allocation from
+a new slab in refill_objects(), single-object allocation from a new slab
+in ___slab_alloc(), and the corresponding early-boot paths that now use
+the same deferred-freelist scheme. Since refill_objects() is also used to
+refill sheaves, the optimization is not limited to the small set of
+kmem_cache_alloc_bulk()/kmem_cache_free_bulk() users; regular allocation
+workloads may benefit as well when they refill from a fresh slab.
+
+In slub_bulk_bench, the time per object drops by about 42% to 70% with
+CONFIG_SLAB_FREELIST_RANDOM=n, and by about 58% to 69% with
+CONFIG_SLAB_FREELIST_RANDOM=y. This benchmark is intended to isolate the
+cost removed by this change: each iteration allocates exactly
+slab->objects from a fresh slab. That makes it a near best-case scenario
+for deferred freelist construction, because the old path still built a
+full freelist even when no objects remained, while the new path avoids
+that work. Realistic workloads may see smaller end-to-end gains depending
+on how often allocations reach this fresh-slab refill path.
+
+Benchmark results (slub_bulk_bench):
+Machine: qemu-system-x86 -m 1024M -smp 8 -enable-kvm -cpu host
+Kernel: Linux 7.1.0-rc1-next-20260429
+Config: x86_64_defconfig
+Cpu: 0
+Rounds: 20
+Total: 256MB
+
+ - CONFIG_SLAB_FREELIST_RANDOM=n -
+
+obj_size=16, batch=256:
+before: 5.44 +- 0.07 ns/object
+after: 3.12 +- 0.03 ns/object
+delta: -42.6%
+
+obj_size=32, batch=128:
+before: 7.57 +- 0.32 ns/object
+after: 3.79 +- 0.07 ns/object
+delta: -49.9%
+
+obj_size=64, batch=64:
+before: 11.27 +- 0.09 ns/object
+after: 4.83 +- 0.06 ns/object
+delta: -57.2%
+
+obj_size=128, batch=32:
+before: 19.38 +- 0.13 ns/object
+after: 6.43 +- 0.08 ns/object
+delta: -66.8%
+
+obj_size=256, batch=32:
+before: 23.59 +- 0.18 ns/object
+after: 6.97 +- 0.07 ns/object
+delta: -70.5%
+
+obj_size=512, batch=32:
+before: 21.06 +- 0.14 ns/object
+after: 7.12 +- 0.17 ns/object
+delta: -66.2%
+
+ - CONFIG_SLAB_FREELIST_RANDOM=y -
+
+obj_size=16, batch=256:
+before: 9.42 +- 0.11 ns/object
+after: 4.36 +- 0.19 ns/object
+delta: -53.7%
+
+obj_size=32, batch=128:
+before: 12.19 +- 0.62 ns/object
+after: 4.93 +- 0.07 ns/object
+delta: -59.6%
+
+obj_size=64, batch=64:
+before: 17.01 +- 0.73 ns/object
+after: 6.14 +- 0.12 ns/object
+delta: -63.9%
+
+obj_size=128, batch=32:
+before: 23.71 +- 1.10 ns/object
+after: 8.35 +- 0.18 ns/object
+delta: -64.8%
+
+obj_size=256, batch=32:
+before: 29.20 +- 0.35 ns/object
+after: 9.44 +- 1.32 ns/object
+delta: -67.7%
+
+obj_size=512, batch=32:
+before: 29.35 +- 0.79 ns/object
+after: 9.21 +- 0.34 ns/object
+delta: -68.6%
+
+Link: https://github.com/HSM6236/slub_bulk_test.git
+Link: https://lore.kernel.org/oe-lkp/202604301428.e2b8d3dd-lkp@intel.com
+Suggested-by: Harry Yoo (Oracle) <harry@xxxxxxxxxx>
+Reviewed-by: Harry Yoo (Oracle) <harry@xxxxxxxxxx>
+Reviewed-by: Hao Li <hao.li@xxxxxxxxxx>
+Tested-by: Hao Li <hao.li@xxxxxxxxxx>
+Signed-off-by: Shengming Hu <hu.shengming@xxxxxxxxxx>
+
+Subject: Bump up sheaf capacity
+Link: https://lore.kernel.org/all/abI9DKxuwl_4Gasj@hyeyoo/
+
 diff --git i/mm/slub.c w/mm/slub.c
-index 0baa906f39..b0b9108719 100644
+index a2bf3756ca..c8743f5e86 100644
 --- i/mm/slub.c
 +++ w/mm/slub.c
 @@ -227,6 +227,17 @@ struct partial_bulk_context {
@@ -322,7 +451,7 @@ index 0baa906f39..b0b9108719 100644
  	spin_unlock_irqrestore(&n->list_lock, flags);
  
  	return object;
-@@ -4348,44 +4364,41 @@ static unsigned int alloc_from_new_slab(struct kmem_cache *s, struct slab *slab,
+@@ -4349,44 +4365,41 @@ static unsigned int alloc_from_new_slab(struct kmem_cache *s, struct slab *slab,
  		void **p, unsigned int count, bool allow_spin)
  {
  	unsigned int allocated = 0;
@@ -386,7 +515,7 @@ index 0baa906f39..b0b9108719 100644
  		}
  		add_partial(n, slab, ADD_TO_HEAD);
  		spin_unlock_irqrestore(&n->list_lock, flags);
-@@ -4456,15 +4469,13 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
+@@ -4457,15 +4470,13 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
  	stat(s, ALLOC_SLAB);
  
  	if (IS_ENABLED(CONFIG_SLUB_TINY) || kmem_cache_debug(s)) {
@@ -404,7 +533,7 @@ index 0baa906f39..b0b9108719 100644
  			return object;
  	}
  
-@@ -7258,10 +7269,6 @@ refill_objects(struct kmem_cache *s, void **p, gfp_t gfp, unsigned int min,
+@@ -7275,10 +7286,6 @@ refill_objects(struct kmem_cache *s, void **p, gfp_t gfp, unsigned int min,
  
  	stat(s, ALLOC_SLAB);
  
@@ -415,7 +544,7 @@ index 0baa906f39..b0b9108719 100644
  	refilled += alloc_from_new_slab(s, slab, p + refilled, max - refilled,
  					/* allow_spin = */ true);
  
-@@ -7592,6 +7599,7 @@ static void early_kmem_cache_node_alloc(int node)
+@@ -7609,6 +7616,7 @@ static void early_kmem_cache_node_alloc(int node)
  {
  	struct slab *slab;
  	struct kmem_cache_node *n;
@@ -423,7 +552,7 @@ index 0baa906f39..b0b9108719 100644
  
  	BUG_ON(kmem_cache_node->size < sizeof(struct kmem_cache_node));
  
-@@ -7603,14 +7611,18 @@ static void early_kmem_cache_node_alloc(int node)
+@@ -7620,14 +7628,18 @@ static void early_kmem_cache_node_alloc(int node)
  		pr_err("SLUB: Allocating a useless per node structure in order to be able to continue\n");
  	}
  
@@ -445,7 +574,7 @@ index 0baa906f39..b0b9108719 100644
  	kmem_cache_node->per_node[node].node = n;
  	init_kmem_cache_node(n);
  	inc_slabs_node(kmem_cache_node, node, slab->objects);
-@@ -7720,13 +7732,13 @@ static unsigned int calculate_sheaf_capacity(struct kmem_cache *s,
+@@ -7737,13 +7749,13 @@ static unsigned int calculate_sheaf_capacity(struct kmem_cache *s,
  	 * should result in similar lock contention (barn or list_lock)
  	 */
  	if (s->size >= PAGE_SIZE)

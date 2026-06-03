@@ -1,5 +1,8 @@
 #!/bin/bash
 # Set extra kernel options.
+#
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2025-2026 Mario Roy <marioeroy@gmail.com>
 
 ### Exit immediately on error.
 set -e
@@ -254,9 +257,6 @@ if [[ $(uname -m) = *"x86"* ]]; then
 
     ### Disable the general notification queue.
     scripts/config -d WATCH_QUEUE
-
-    ### Disable Watchdog Timer Support.
-    scripts/config -d WATCHDOG
 
     ### Disable PCI Express ASPM L0s and L1, even if the BIOS enabled them.
     scripts/config -d PCIEASPM_DEFAULT -e PCIEASPM_PERFORMANCE

@@ -148,7 +148,7 @@ _srcname=cachyos-${_major}-${_rcver}-${_tagrel}
 _kernver="$pkgver-$pkgrel"
 _kernuname="${pkgver}-${_pkgsuffix}"
 arch=('x86_64')
-url="https://github.com/marioroy/cachymod"
+url="https://github.com/RAMDRAGONS/jcachy"
 license=('GPL-2.0-only')
 options=('!strip' '!debug')
 
@@ -167,9 +167,6 @@ source=(
     # mm slub fixes
     "0000-mm-slub-fixes.patch"
 
-    # rseq: Cure refactoring regressions
-    "0000-rseq-cure-regressions.patch"
-
     # CachyOS
     "0001-rt-i915.patch"
     "0001-bore-cachy.patch"
@@ -184,7 +181,7 @@ source=(
     "0300-switch-2-controller-driver.patch"
     "0001-6.18.3-nap-v0.4.0.patch"
     "0001-7.0-rc5-cambyses-v0.5.3.patch"
-    "0001-linux7.1-rc5-lru_marie-0.2.10.patch"
+    "0001-linux7.1-rc5-lru_marie-0.3.0.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
 
     # The revert is applied only if BORE patch is selected
