@@ -179,7 +179,7 @@ source=(
 
     # JCachy
     "0300-switch-2-controller-driver.patch"
-    "0001-6.18.3-nap-v0.4.0.patch"
+    "0001-6.18.3-nap-v0.5.0.patch"
     "0001-7.0-rc5-cambyses-v0.5.3.patch"
     "0001-linux7.1-rc5-lru_marie-0.3.1.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
