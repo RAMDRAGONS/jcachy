@@ -1,6 +1,6 @@
-From 25ad841899e22e056c2f45a7e707ac3640cf0763 Mon Sep 17 00:00:00 2001
+From b66e449ca72ae34b90a1ca45dfec0a7ccf91f0bd Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 3 Jun 2026 13:29:19 -0400
+Date: Fri, 5 Jun 2026 12:26:14 -0400
 Subject: [PATCH] Apply 0001-linux7.1-rc5-lru_marie-0.3.1.patch
 
 ---
