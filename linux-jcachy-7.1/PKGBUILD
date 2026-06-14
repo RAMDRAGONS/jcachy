@@ -136,15 +136,16 @@ fi
 
 _pkgsuffix=jcachy
 _major=7.1
-#_minor=6
-_tagrel=2
+_minor=0
+_tagrel=1
 _rcver="rc7"
+#pkgver=${_major}.${_rcver}
 pkgver=${_major}.${_minor}
 
 pkgdesc='JCachy Linux Kernel with other patches and improvements'
 pkgrel=1
-#_srcname=cachyos-${_major}.${_minor}-${_tagrel}
-_srcname=cachyos-${_major}-${_rcver}-${_tagrel}
+_srcname=cachyos-${_major}.${_minor}-${_tagrel}
+#_srcname=cachyos-${_major}-${_rcver}-${_tagrel}
 _kernver="$pkgver-$pkgrel"
 _kernuname="${pkgver}-${_pkgsuffix}"
 arch=('x86_64')
@@ -178,7 +179,7 @@ source=(
     "0300-switch-2-controller-driver.patch"
     "0001-6.18.3-nap-v0.5.0.patch"
     "0001-7.0-rc5-cambyses-v0.5.3.patch"
-    "0001-linux7.1-rc5-lru_marie-0.3.1.patch"
+    "0001-linux7.1-rc5-lru_marie-0.3.5.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
 
     # The revert is applied only if BORE patch is selected
