@@ -24,9 +24,10 @@ sched/fair: Add sched_smt_active check for fastpaths
 sched: Unify SMT active check via sched_smt_active()
 sched/fair: use rq_clock() in update_tg_load_avg() rate-limit
 sched/fair: Rebuild load weight when switching to fair
+sched/fair: Don't trigger active lb if src_rq->curr is CFS and not on_rq
 
 diff --git i/Makefile w/Makefile
-index 22412bb51d..f0c4153b81 100644
+index a0d95d1f11..91334cc2e0 100644
 --- i/Makefile
 +++ w/Makefile
 @@ -467,7 +467,7 @@ KERNELDOC       = $(srctree)/tools/docs/kernel-doc
@@ -38,7 +39,7 @@ index 22412bb51d..f0c4153b81 100644
  KBUILD_USERCFLAGS  := $(KBUILD_USERHOSTCFLAGS) $(USERCFLAGS)
  KBUILD_USERLDFLAGS := $(USERLDFLAGS)
  
-@@ -801,7 +801,7 @@ ifdef need-config
+@@ -802,7 +802,7 @@ ifdef need-config
  include $(objtree)/include/config/auto.conf
  endif
  
@@ -251,7 +252,7 @@ index 73b6b24269..43e0bde303 100644
  
  	BUILD_BUG_ON(PR_SCHED_CORE_SCOPE_THREAD != PIDTYPE_PID);
 diff --git i/kernel/sched/fair.c w/kernel/sched/fair.c
-index 27c1c99cef..04145746af 100644
+index 27c1c99cef..da17f6e024 100644
 --- i/kernel/sched/fair.c
 +++ w/kernel/sched/fair.c
 @@ -1620,10 +1620,7 @@ update_stats_curr_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
@@ -303,6 +304,30 @@ index 27c1c99cef..04145746af 100644
  			if (idle_smt == -1)
  				idle_smt = cpu;
  			/*
+@@ -12503,7 +12501,9 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
+ 			 * if the curr task on busiest CPU can't be
+ 			 * moved to this_cpu:
+ 			 */
+-			if (!cpumask_test_cpu(this_cpu, busiest->curr->cpus_ptr)) {
++			if (!cpumask_test_cpu(this_cpu, busiest->curr->cpus_ptr) ||
++				(busiest->curr->sched_class == &fair_sched_class &&
++				!busiest->curr->on_rq)) {
+ 				raw_spin_rq_unlock_irqrestore(busiest, flags);
+ 				goto out_one_pinned;
+ 			}
+@@ -12535,10 +12535,8 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
+ 		sd->nr_balance_failed = 0;
+ 	}
+ 
+-	if (likely(!active_balance) || need_active_balance(&env)) {
+-		/* We were unbalanced, so reset the balancing interval */
+-		sd->balance_interval = sd->min_interval;
+-	}
++	/* We were unbalanced, so reset the balancing interval */
++	sd->balance_interval = sd->min_interval;
+ 
+ 	goto out;
+ 
 @@ -14046,6 +14044,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
@@ -414,10 +439,10 @@ index f213bf94a4..23283fffa0 100644
  
  static int tcp_try_rmem_schedule(struct sock *sk, const struct sk_buff *skb,
 diff --git i/scripts/Makefile.lib w/scripts/Makefile.lib
-index b36c7c6817..4b0281cfe2 100644
+index 86e1428cc5..ca061f318c 100644
 --- i/scripts/Makefile.lib
 +++ w/scripts/Makefile.lib
-@@ -469,13 +469,13 @@ quiet_cmd_xzmisc = XZMISC  $@
+@@ -470,13 +470,13 @@ quiet_cmd_xzmisc = XZMISC  $@
  # be used because it would require zstd to allocate a 128 MB buffer.
  
  quiet_cmd_zstd = ZSTD    $@
