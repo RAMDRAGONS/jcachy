@@ -136,8 +136,8 @@ fi
 
 _pkgsuffix=jcachy
 _major=7.1
-_minor=1
-_tagrel=2
+_minor=2
+_tagrel=1
 _rcver="rc7"
 #pkgver=${_major}.${_rcver}
 pkgver=${_major}.${_minor}
@@ -179,7 +179,7 @@ source=(
     "0300-switch-2-controller-driver.patch"
     "0001-6.18.3-nap-v0.5.0.patch"
     "0001-7.0-rc5-cambyses-v0.5.3.patch"
-    "0001-linux7.1-rc5-lru_marie-0.5.0r2.patch"
+    "0001-linux7.1-rc5-lru_marie-0.6.2.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
     "fix-dcn401-color-manager-regression.patch"
 
