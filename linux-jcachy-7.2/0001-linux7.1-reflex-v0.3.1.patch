@@ -1,22 +1,3 @@
-From efee2afef254d618eb5c407815f298ba2f79cff4 Mon Sep 17 00:00:00 2001
-From: Masahito S <firelzrd@gmail.com>
-Date: Fri, 1 May 2026 16:52:28 +0900
-Subject: [PATCH] linux7.1-reflex-v0.3.1
-
----
- arch/x86/kernel/cpu/aperfmperf.c |    1 +
- drivers/cpufreq/Kconfig          |   24 +
- drivers/cpufreq/Makefile         |    1 +
- drivers/cpufreq/cpufreq.c        |    3 +
- drivers/cpufreq/cpufreq_reflex.c | 1141 ++++++++++++++++++++++++++++++
- include/linux/sched/cpufreq.h    |   10 +
- kernel/kthread.c                 |    1 +
- kernel/sched/cpufreq.c           |    1 +
- kernel/sched/cpufreq_schedutil.c |   76 ++
- kernel/time/tick-sched.c         |    1 +
- 10 files changed, 1259 insertions(+)
- create mode 100644 drivers/cpufreq/cpufreq_reflex.c
-
 diff --git a/arch/x86/kernel/cpu/aperfmperf.c b/arch/x86/kernel/cpu/aperfmperf.c
 index 7ffc78d5eb..4271bcc71f 100644
 --- a/arch/x86/kernel/cpu/aperfmperf.c
@@ -65,7 +46,7 @@ index db83f33656..65c7f4918e 100644
  
  config CPUFREQ_DT
 diff --git a/drivers/cpufreq/Makefile b/drivers/cpufreq/Makefile
-index 385c9fcc65..4e369f8eb7 100644
+index 6c7a39b7f8..8e461d1102 100644
 --- a/drivers/cpufreq/Makefile
 +++ b/drivers/cpufreq/Makefile
 @@ -13,6 +13,7 @@ obj-$(CONFIG_CPU_FREQ_GOV_ONDEMAND)	+= cpufreq_ondemand.o
@@ -77,10 +58,10 @@ index 385c9fcc65..4e369f8eb7 100644
  obj-$(CONFIG_CPUFREQ_DT)		+= cpufreq-dt.o
  obj-$(CONFIG_CPUFREQ_DT_RUST)		+= rcpufreq_dt.o
 diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
-index 44eb1b7e7f..323cdcf020 100644
+index 507224c9ec..776a70e48d 100644
 --- a/drivers/cpufreq/cpufreq.c
 +++ b/drivers/cpufreq/cpufreq.c
-@@ -2044,6 +2044,7 @@ bool cpufreq_driver_test_flags(u16 flags)
+@@ -2045,6 +2045,7 @@ bool cpufreq_driver_test_flags(u16 flags)
  {
  	return !!(cpufreq_driver->flags & flags);
  }
@@ -88,7 +69,7 @@ index 44eb1b7e7f..323cdcf020 100644
  
  /**
   * cpufreq_get_current_driver - Return the current driver's name.
-@@ -2247,6 +2248,7 @@ void cpufreq_driver_adjust_perf(struct cpufreq_policy *policy,
+@@ -2248,6 +2249,7 @@ void cpufreq_driver_adjust_perf(struct cpufreq_policy *policy,
  {
  	cpufreq_driver->adjust_perf(policy, min_perf, target_perf, capacity);
  }
@@ -96,7 +77,7 @@ index 44eb1b7e7f..323cdcf020 100644
  
  /**
   * cpufreq_driver_has_adjust_perf - Check "direct fast switch" callback.
-@@ -2258,6 +2260,7 @@ bool cpufreq_driver_has_adjust_perf(void)
+@@ -2259,6 +2261,7 @@ bool cpufreq_driver_has_adjust_perf(void)
  {
  	return !!cpufreq_driver->adjust_perf;
  }
@@ -1274,7 +1255,7 @@ index bdd31ab93b..9496150882 100644
  
  #endif /* _LINUX_SCHED_CPUFREQ_H */
 diff --git a/kernel/kthread.c b/kernel/kthread.c
-index 791210daf8..a250ab1b65 100644
+index 63beb59b7a..0dea8ea530 100644
 --- a/kernel/kthread.c
 +++ b/kernel/kthread.c
 @@ -588,6 +588,7 @@ void kthread_bind_mask(struct task_struct *p, const struct cpumask *mask)
@@ -1295,10 +1276,10 @@ index 742fb9e62e..5abbe2f17b 100644
  }
 +EXPORT_SYMBOL_GPL(cpufreq_this_cpu_can_update);
 diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
-index ae9fd211ce..a1d66273cf 100644
+index a4e689eefd..ac5455e863 100644
 --- a/kernel/sched/cpufreq_schedutil.c
 +++ b/kernel/sched/cpufreq_schedutil.c
-@@ -936,3 +936,79 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
+@@ -937,3 +937,79 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
  }
  
  cpufreq_governor_init(schedutil_gov);
@@ -1379,17 +1360,14 @@ index ae9fd211ce..a1d66273cf 100644
 +}
 +EXPORT_SYMBOL_GPL(cpufreq_scx_switched_all);
 diff --git a/kernel/time/tick-sched.c b/kernel/time/tick-sched.c
-index cbbb87a0c6..8501657277 100644
+index 98a9cae915..375a034f2a 100644
 --- a/kernel/time/tick-sched.c
 +++ b/kernel/time/tick-sched.c
-@@ -1428,6 +1428,7 @@ unsigned long tick_nohz_get_idle_calls_cpu(int cpu)
+@@ -1329,6 +1329,7 @@ unsigned long tick_nohz_get_idle_calls_cpu(int cpu)
  
  	return ts->idle_calls;
  }
 +EXPORT_SYMBOL_GPL(tick_nohz_get_idle_calls_cpu);
  
- static void tick_nohz_account_idle_time(struct tick_sched *ts,
- 					ktime_t now)
--- 
-2.34.1
-
+ void tick_nohz_idle_restart_tick(void)
+ {

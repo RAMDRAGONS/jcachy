@@ -1,26 +1,5 @@
-From 4b5a2653d96aa4be870c759ce5c74a79a49c2e61 Mon Sep 17 00:00:00 2001
-From: Eric Naim <dnaim@cachyos.org>
-Date: Thu, 26 Mar 2026 12:43:13 +0800
-Subject: [PATCH] rt-i915
-
-Signed-off-by: Eric Naim <dnaim@cachyos.org>
----
- drivers/gpu/drm/i915/Kconfig                  |  1 -
- drivers/gpu/drm/i915/display/intel_crtc.c     |  9 ++--
- drivers/gpu/drm/i915/display/intel_cursor.c   |  9 ++--
- .../drm/i915/display/intel_display_trace.h    |  4 ++
- drivers/gpu/drm/i915/display/intel_vblank.c   | 50 ++++++++++++++-----
- drivers/gpu/drm/i915/gt/intel_engine_cs.c     |  2 +-
- .../drm/i915/gt/intel_execlists_submission.c  | 17 ++-----
- drivers/gpu/drm/i915/gt/uc/intel_guc.h        |  2 +-
- drivers/gpu/drm/i915/i915_request.c           |  2 -
- drivers/gpu/drm/i915/i915_trace.h             |  4 ++
- drivers/gpu/drm/i915/intel_uncore_trace.h     |  4 ++
- kernel/ksysfs.c                               | 12 +++++
- 12 files changed, 81 insertions(+), 35 deletions(-)
-
 diff --git a/drivers/gpu/drm/i915/Kconfig b/drivers/gpu/drm/i915/Kconfig
-index 5e939004b646..40a9234e6e5d 100644
+index 5e939004b6..40a9234e6e 100644
 --- a/drivers/gpu/drm/i915/Kconfig
 +++ b/drivers/gpu/drm/i915/Kconfig
 @@ -3,7 +3,6 @@ config DRM_I915
@@ -32,10 +11,10 @@ index 5e939004b646..40a9234e6e5d 100644
  	select INTERVAL_TREE
  	# we need shmfs for the swappable backing store, and in particular
 diff --git a/drivers/gpu/drm/i915/display/intel_crtc.c b/drivers/gpu/drm/i915/display/intel_crtc.c
-index 53378d2dcbec..3c89b9452863 100644
+index 7ce2b52297..1ef8c9e90c 100644
 --- a/drivers/gpu/drm/i915/display/intel_crtc.c
 +++ b/drivers/gpu/drm/i915/display/intel_crtc.c
-@@ -587,7 +587,8 @@ void intel_pipe_update_start(struct intel_atomic_state *state,
+@@ -633,7 +633,8 @@ void intel_pipe_update_start(struct intel_atomic_state *state,
  	 */
  	intel_psr_wait_for_idle_locked(new_crtc_state);
  
@@ -45,7 +24,7 @@ index 53378d2dcbec..3c89b9452863 100644
  
  	crtc->debug.min_vbl = evade.min;
  	crtc->debug.max_vbl = evade.max;
-@@ -605,7 +606,8 @@ void intel_pipe_update_start(struct intel_atomic_state *state,
+@@ -651,7 +652,8 @@ void intel_pipe_update_start(struct intel_atomic_state *state,
  	return;
  
  irq_disable:
@@ -55,7 +34,7 @@ index 53378d2dcbec..3c89b9452863 100644
  }
  
  #if IS_ENABLED(CONFIG_DRM_I915_DEBUG_VBLANK_EVADE)
-@@ -752,7 +754,8 @@ void intel_pipe_update_end(struct intel_atomic_state *state,
+@@ -798,7 +800,8 @@ void intel_pipe_update_end(struct intel_atomic_state *state,
  	     !new_crtc_state->vrr.enable))
  		intel_vrr_send_push(NULL, new_crtc_state);
  
@@ -66,7 +45,7 @@ index 53378d2dcbec..3c89b9452863 100644
  	if (intel_parent_vgpu_active(display))
  		goto out;
 diff --git a/drivers/gpu/drm/i915/display/intel_cursor.c b/drivers/gpu/drm/i915/display/intel_cursor.c
-index 2c5d917fbd7e..3477b2cebbe3 100644
+index 52347668f2..97b6c7c533 100644
 --- a/drivers/gpu/drm/i915/display/intel_cursor.c
 +++ b/drivers/gpu/drm/i915/display/intel_cursor.c
 @@ -919,13 +919,15 @@ intel_legacy_cursor_update(struct drm_plane *_plane,
@@ -98,7 +77,7 @@ index 2c5d917fbd7e..3477b2cebbe3 100644
  	intel_psr_unlock(crtc_state);
  
 diff --git a/drivers/gpu/drm/i915/display/intel_display_trace.h b/drivers/gpu/drm/i915/display/intel_display_trace.h
-index 27ebc32cb61a..a519d94700c3 100644
+index 504d105935..a974fedc96 100644
 --- a/drivers/gpu/drm/i915/display/intel_display_trace.h
 +++ b/drivers/gpu/drm/i915/display/intel_display_trace.h
 @@ -13,6 +13,10 @@
@@ -113,7 +92,7 @@ index 27ebc32cb61a..a519d94700c3 100644
  #include <linux/string_helpers.h>
  #include <linux/types.h>
 diff --git a/drivers/gpu/drm/i915/display/intel_vblank.c b/drivers/gpu/drm/i915/display/intel_vblank.c
-index 1b7cfe226ff8..a540615ba431 100644
+index 28d8119979..a329e938d9 100644
 --- a/drivers/gpu/drm/i915/display/intel_vblank.c
 +++ b/drivers/gpu/drm/i915/display/intel_vblank.c
 @@ -316,6 +316,21 @@ static void intel_vblank_section_exit(struct intel_display *display)
@@ -217,7 +196,7 @@ index 1b7cfe226ff8..a540615ba431 100644
  
  	finish_wait(wq, &wait);
 diff --git a/drivers/gpu/drm/i915/gt/intel_engine_cs.c b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
-index 54c9571327e7..97bc49fcb5e0 100644
+index c0fd349a46..9dd9665128 100644
 --- a/drivers/gpu/drm/i915/gt/intel_engine_cs.c
 +++ b/drivers/gpu/drm/i915/gt/intel_engine_cs.c
 @@ -1607,7 +1607,7 @@ u64 intel_engine_get_last_batch_head(const struct intel_engine_cs *engine)
@@ -230,7 +209,7 @@ index 54c9571327e7..97bc49fcb5e0 100644
  
  	/*
 diff --git a/drivers/gpu/drm/i915/gt/intel_execlists_submission.c b/drivers/gpu/drm/i915/gt/intel_execlists_submission.c
-index cafe0b8e6bdd..55f94c5feaa3 100644
+index 1359fc9cb8..e11db81dca 100644
 --- a/drivers/gpu/drm/i915/gt/intel_execlists_submission.c
 +++ b/drivers/gpu/drm/i915/gt/intel_execlists_submission.c
 @@ -1300,7 +1300,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)
@@ -293,7 +272,7 @@ index cafe0b8e6bdd..55f94c5feaa3 100644
  	}
  
 diff --git a/drivers/gpu/drm/i915/gt/uc/intel_guc.h b/drivers/gpu/drm/i915/gt/uc/intel_guc.h
-index 053780f562c1..b25fa8f4dc4b 100644
+index 053780f562..b25fa8f4dc 100644
 --- a/drivers/gpu/drm/i915/gt/uc/intel_guc.h
 +++ b/drivers/gpu/drm/i915/gt/uc/intel_guc.h
 @@ -362,7 +362,7 @@ static inline int intel_guc_send_busy_loop(struct intel_guc *guc,
@@ -306,7 +285,7 @@ index 053780f562c1..b25fa8f4dc4b 100644
  	/*
  	 * FIXME: Have caller pass in if we are in an atomic context to avoid
 diff --git a/drivers/gpu/drm/i915/i915_request.c b/drivers/gpu/drm/i915/i915_request.c
-index d2c7b1090df0..f66f8efc7062 100644
+index d2c7b1090d..f66f8efc70 100644
 --- a/drivers/gpu/drm/i915/i915_request.c
 +++ b/drivers/gpu/drm/i915/i915_request.c
 @@ -610,7 +610,6 @@ bool __i915_request_submit(struct i915_request *request)
@@ -326,7 +305,7 @@ index d2c7b1090df0..f66f8efc7062 100644
  
  	/*
 diff --git a/drivers/gpu/drm/i915/i915_trace.h b/drivers/gpu/drm/i915/i915_trace.h
-index 7ed41ce9b708..6b87ef6005c6 100644
+index 7ed41ce9b7..6b87ef6005 100644
 --- a/drivers/gpu/drm/i915/i915_trace.h
 +++ b/drivers/gpu/drm/i915/i915_trace.h
 @@ -6,6 +6,10 @@
@@ -341,7 +320,7 @@ index 7ed41ce9b708..6b87ef6005c6 100644
  #include <linux/types.h>
  #include <linux/tracepoint.h>
 diff --git a/drivers/gpu/drm/i915/intel_uncore_trace.h b/drivers/gpu/drm/i915/intel_uncore_trace.h
-index f13ff71edf2d..3c67e267fb60 100644
+index f13ff71edf..3c67e267fb 100644
 --- a/drivers/gpu/drm/i915/intel_uncore_trace.h
 +++ b/drivers/gpu/drm/i915/intel_uncore_trace.h
 @@ -7,6 +7,10 @@
@@ -356,10 +335,10 @@ index f13ff71edf2d..3c67e267fb60 100644
  
  #include <linux/types.h>
 diff --git a/kernel/ksysfs.c b/kernel/ksysfs.c
-index a9e6354d9e25..691c5671b346 100644
+index f45ade7180..670a7a57d7 100644
 --- a/kernel/ksysfs.c
 +++ b/kernel/ksysfs.c
-@@ -132,6 +132,15 @@ KERNEL_ATTR_RO(vmcoreinfo);
+@@ -133,6 +133,15 @@ KERNEL_ATTR_RO(vmcoreinfo);
  
  #endif /* CONFIG_VMCORE_INFO */
  
@@ -375,7 +354,7 @@ index a9e6354d9e25..691c5671b346 100644
  /* whether file capabilities are enabled */
  static ssize_t fscaps_show(struct kobject *kobj,
  				  struct kobj_attribute *attr, char *buf)
-@@ -205,6 +214,9 @@ static struct attribute * kernel_attrs[] = {
+@@ -206,6 +215,9 @@ static struct attribute * kernel_attrs[] = {
  #ifndef CONFIG_TINY_RCU
  	&rcu_expedited_attr.attr,
  	&rcu_normal_attr.attr,
@@ -385,6 +364,3 @@ index a9e6354d9e25..691c5671b346 100644
  #endif
  	NULL
  };
--- 
-2.53.0
-

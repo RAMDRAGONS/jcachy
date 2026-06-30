@@ -1,8 +1,8 @@
-diff --git i/kernel/sched/fair.c w/kernel/sched/fair.c
-index 4929fdf049..407d409ac0 100644
---- i/kernel/sched/fair.c
-+++ w/kernel/sched/fair.c
-@@ -75,7 +75,7 @@
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 6c0bad8589..2cfcf8cf05 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -79,7 +79,7 @@
   * BORE : default SCHED_TUNABLESCALING_NONE = *1 constant
   * EEVDF: default SCHED_TUNABLESCALING_LOG  = *(1+ilog(ncpus))
   */
@@ -11,7 +11,7 @@ index 4929fdf049..407d409ac0 100644
  
  /*
   * Minimal preemption granularity for CPU-bound tasks:
-@@ -89,11 +89,11 @@ static const unsigned int nsecs_per_tick       = 1000000000ULL / HZ;
+@@ -93,11 +93,11 @@ static const unsigned int nsecs_per_tick       = 1000000000ULL / HZ;
  unsigned int sysctl_sched_min_base_slice       = CONFIG_MIN_BASE_SLICE_NS;
  __read_mostly uint sysctl_sched_base_slice     = nsecs_per_tick;
  #else /* !CONFIG_SCHED_BORE */

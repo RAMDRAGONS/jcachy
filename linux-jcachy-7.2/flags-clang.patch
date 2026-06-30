@@ -1,8 +1,8 @@
-
-diff -uarp a/Makefile b/Makefile
+diff --git a/Makefile b/Makefile
+index 804dea13c4..821fda2952 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -921,6 +921,17 @@
+@@ -956,6 +956,17 @@ KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
  KBUILD_CFLAGS	+= $(call cc-option,-fno-allow-store-data-races)
  endif
  
@@ -20,26 +20,11 @@ diff -uarp a/Makefile b/Makefile
  ifdef CONFIG_READABLE_ASM
  # Disable optimizations that make assembler listings hard to read.
  # reorder blocks reorders the control in the function
--- 
-2.40.2
-
-Ensure the do_nanosleep function is not inlined
-
-  "bpfland-next is setting a kprobe on do_nanosleep to detect tasks
-  that are calling sleep explicititly and it keeps those on the same
-  CPU, if the kprobe fails, nothing bad happens, but it's a small
-  optimization"  -- arighi, CachyOS sched-ext discord
-
-  $ sudo grep do_nanosleep /proc/kallsyms
-  0000000000000000 t __pfx_do_nanosleep
-  0000000000000000 t do_nanosleep
-
-Signed-off-by: Mario Roy <>
-
-diff -uarp a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
+diff --git a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
+index 313dcea127..e4e59431c6 100644
 --- a/kernel/time/hrtimer.c
 +++ b/kernel/time/hrtimer.c
-@@ -2113,7 +2113,7 @@ int nanosleep_copyout(struct restart_blo
+@@ -2387,7 +2387,7 @@ int nanosleep_copyout(struct restart_block *restart, struct timespec64 *ts)
  	return -ERESTART_RESTARTBLOCK;
  }
  
@@ -48,17 +33,11 @@ diff -uarp a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
  {
  	struct restart_block *restart;
  
--- 
-2.40.2
-
-Ensure the setup_net function is not inlined, needed by bpftune
-
-Signed-off-by: Mario Roy <>
-
-diff -uarp a/net/core/net_namespace.c b/net/core/net_namespace.c
+diff --git a/net/core/net_namespace.c b/net/core/net_namespace.c
+index d9dafe24f5..4a88ffcdb8 100644
 --- a/net/core/net_namespace.c
 +++ b/net/core/net_namespace.c
-@@ -433,7 +433,7 @@ static __net_init void preinit_net(struc
+@@ -433,7 +433,7 @@ static __net_init int preinit_net(struct net *net, struct user_namespace *user_n
  /*
   * setup_net runs the initializers for the network namespace object.
   */
@@ -67,6 +46,3 @@ diff -uarp a/net/core/net_namespace.c b/net/core/net_namespace.c
  {
  	/* Must be called with pernet_ops_rwsem held */
  	const struct pernet_operations *ops;
--- 
-2.40.2
-
