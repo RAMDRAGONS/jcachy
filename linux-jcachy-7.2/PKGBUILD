@@ -137,13 +137,13 @@ fi
 _pkgsuffix=jcachy
 _major=7.2
 #_minor=2
-_tagrel=3
+_tagrel=4
 _rcver="rc1"
 pkgver=${_major}.${_rcver}
 #pkgver=${_major}.${_minor}
 
 pkgdesc='JCachy Linux Kernel with other patches and improvements'
-pkgrel=3
+pkgrel=4
 #_srcname=cachyos-${_major}.${_minor}-${_tagrel}
 _srcname=cachyos-${_major}-${_rcver}-${_tagrel}
 _kernver="$pkgver-$pkgrel"
@@ -180,7 +180,7 @@ source=(
     "0001-7.2-rc1-poc-selector-v2.6.2.patch"
     "0001-6.18.3-nap-v0.5.0.patch"
     "0001-7.0-rc5-cambyses-v0.5.3.patch"
-    "0001-linux7.2-rc1-lru_marie-0.6.3.patch"
+    "0001-linux7.2-rc1-lru_marie-0.6.5.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
 
     # The revert is applied only if BORE patch is selected

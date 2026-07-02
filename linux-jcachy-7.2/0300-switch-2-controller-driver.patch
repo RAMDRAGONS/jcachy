@@ -1,3 +1,40 @@
+From d6826de4002c3921881825dd44f5f18d957bf491 Mon Sep 17 00:00:00 2001
+From: Vicki Pfau <vi@endrift.com>
+Date: Wed, 1 Jul 2026 20:41:02 -0700
+Subject: [PATCH 1/3] HID: nintendo: Add preliminary Switch 2 controller driver
+
+This adds a new driver for the Switch 2 controllers. The Switch 2 uses an
+unusual split-interface design such that input and rumble occur on the main
+HID interface, but all other communication occurs over a "configuration"
+interface. This is the case on both USB and Bluetooth, so this new driver
+uses a split-driver design with the HID interface being the "main" driver
+and the configuration interface is a secondary driver that looks up to the
+HID interface, sharing resources on a common struct.
+
+Due to using a non-standard pairing interface as well as Bluetooth
+communications being extremely limited in the kernel, a custom interface
+between userspace and the kernel will need to be designed, along with
+bringup in BlueZ. That is beyond the scope of this initial patch, which
+only contains the generic HID and USB configuration interface drivers.
+
+This initial work supports general input for the Joy-Con 2, Pro Controller
+2, and GameCube NSO controllers. IMU, rumble and battery support is not yet
+present.
+
+Signed-off-by: Vicki Pfau <vi@endrift.com>
+---
+ MAINTAINERS                                   |    1 +
+ drivers/hid/Kconfig                           |   11 +-
+ drivers/hid/hid-ids.h                         |    4 +
+ drivers/hid/hid-nintendo.c                    | 1276 ++++++++++++++++-
+ drivers/hid/hid-nintendo.h                    |   72 +
+ drivers/input/joystick/Kconfig                |   11 +
+ drivers/input/joystick/Makefile               |    1 +
+ drivers/input/joystick/nintendo-switch2-usb.c |  468 ++++++
+ 8 files changed, 1834 insertions(+), 10 deletions(-)
+ create mode 100644 drivers/hid/hid-nintendo.h
+ create mode 100644 drivers/input/joystick/nintendo-switch2-usb.c
+
 diff --git a/MAINTAINERS b/MAINTAINERS
 index 15011f5752..b9f546def7 100644
 --- a/MAINTAINERS
@@ -11,7 +48,7 @@ index 15011f5752..b9f546def7 100644
  S:	Maintained
  F:	drivers/hid/hid-nintendo*
 diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
-index f9bcaeb663..851eed76c2 100644
+index f9bcaeb663..19c77c323e 100644
 --- a/drivers/hid/Kconfig
 +++ b/drivers/hid/Kconfig
 @@ -843,10 +843,13 @@ config HID_NINTENDO
@@ -32,21 +69,6 @@ index f9bcaeb663..851eed76c2 100644
  
  	To compile this driver as a module, choose M here: the
  	module will be called hid-nintendo.
-@@ -856,10 +859,10 @@ config NINTENDO_FF
- 	depends on HID_NINTENDO
- 	select INPUT_FF_MEMLESS
- 	help
--	Say Y here if you have a Nintendo Switch controller and want to enable
--	force feedback support for it. This works for both joy-cons, the pro
--	controller, and the NSO N64 controller. For the pro controller, both
--	rumble motors can be controlled individually.
-+	Say Y here if you have a Nintendo Switch or Switch 2 controller and want
-+	to enable force feedback support for it. This works for Joy-Cons, the Pro
-+	Controllers, and the NSO N64 and GameCube controller. For the Pro
-+	Controller, both rumble motors can be controlled individually.
- 
- config HID_NTI
- 	tristate "NTI keyboard adapters"
 diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
 index 1059922baa..9ba62b8fb8 100644
 --- a/drivers/hid/hid-ids.h
@@ -63,7 +85,7 @@ index 1059922baa..9ba62b8fb8 100644
  #define USB_VENDOR_ID_NOVATEK		0x0603
  #define USB_DEVICE_ID_NOVATEK_PCT	0x0600
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index e7302ec01f..9cb4a503fe 100644
+index e7302ec01f..f82034decb 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
 @@ -1,11 +1,13 @@
@@ -152,7 +174,7 @@ index e7302ec01f..9cb4a503fe 100644
  {
  	struct joycon_ctlr *ctlr = hid_get_drvdata(hdev);
  
-@@ -2838,7 +2845,1482 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
+@@ -2838,7 +2845,1206 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
  	return 0;
  }
  
@@ -182,36 +204,6 @@ index e7302ec01f..9cb4a503fe 100644
 +#define NS2_BTN3_C	BIT(4)
 +#define NS2_BTN3_SR	BIT(6)
 +#define NS2_BTN3_SL	BIT(7)
-+
-+#define NS2_BTN_U1_Y	BIT(0)
-+#define NS2_BTN_U1_X	BIT(1)
-+#define NS2_BTN_U1_B	BIT(2)
-+#define NS2_BTN_U1_A	BIT(3)
-+#define NS2_BTN_U1_SR	BIT(4)
-+#define NS2_BTN_U1_SL	BIT(5)
-+#define NS2_BTN_U1_R	BIT(6)
-+#define NS2_BTN_U1_ZR	BIT(7)
-+
-+#define NS2_BTN_U2_MINUS	BIT(0)
-+#define NS2_BTN_U2_PLUS		BIT(1)
-+#define NS2_BTN_U2_RS		BIT(2)
-+#define NS2_BTN_U2_LS		BIT(3)
-+#define NS2_BTN_U2_HOME		BIT(4)
-+#define NS2_BTN_U2_CAPTURE	BIT(5)
-+#define NS2_BTN_U2_C		BIT(6)
-+
-+#define NS2_BTN_U3_DOWN		BIT(0)
-+#define NS2_BTN_U3_UP		BIT(1)
-+#define NS2_BTN_U3_RIGHT	BIT(2)
-+#define NS2_BTN_U3_LEFT		BIT(3)
-+#define NS2_BTN_U3_SR		BIT(4)
-+#define NS2_BTN_U3_SL		BIT(5)
-+#define NS2_BTN_U3_L		BIT(6)
-+#define NS2_BTN_U3_ZL		BIT(7)
-+
-+#define NS2_BTN_U4_GR		BIT(0)
-+#define NS2_BTN_U4_GL		BIT(1)
-+#define NS2_BTN_U4_HEADSET	BIT(5)
 +
 +#define NS2_BTN_JCR_HOME	BIT(0)
 +#define NS2_BTN_JCR_GR		BIT(2)
@@ -330,11 +322,10 @@ index e7302ec01f..9cb4a503fe 100644
 +	NS2_INIT_READ_USER_SECONDARY_CALIB,
 +	NS2_INIT_SET_FEATURE_MASK,
 +	NS2_INIT_ENABLE_FEATURES,
-+	NS2_INIT_ENABLE_RUMBLE,
 +	NS2_INIT_GRIP_BUTTONS,
 +	NS2_INIT_REPORT_FORMAT,
-+	NS2_INIT_SET_PLAYER_LEDS,
 +	NS2_INIT_INPUT,
++	NS2_INIT_SET_PLAYER_LEDS,
 +	NS2_INIT_FINISH,
 +	NS2_INIT_DONE,
 +};
@@ -362,21 +353,10 @@ index e7302ec01f..9cb4a503fe 100644
 +	struct switch2_axis_calibration y;
 +};
 +
-+struct switch2_hd_rumble {
-+	uint16_t hi_freq : 10;
-+	uint16_t hi_amp : 10;
-+	uint16_t lo_freq : 10;
-+	uint16_t lo_amp : 10;
-+} __packed;
-+
-+struct switch2_erm_rumble {
-+	uint16_t error;
-+	uint16_t amplitude;
-+};
-+
 +struct switch2_controller {
 +	struct hid_device *hdev;
 +	struct switch2_cfg_intf *cfg;
++	struct kref refcount;
 +
 +	char name[64];
 +	char phys[64];
@@ -395,45 +375,8 @@ index e7302ec01f..9cb4a503fe 100644
 +	uint8_t rt_zero;
 +
 +	uint32_t player_id;
-+	struct led_classdev leds[4];
-+
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+	spinlock_t rumble_lock;
-+	uint8_t rumble_seq;
-+	union {
-+		struct switch2_hd_rumble hd;
-+		struct switch2_erm_rumble sd;
-+	} rumble;
-+	uint64_t last_rumble_work;
-+	struct delayed_work rumble_work;
-+	uint8_t rumble_buffer[64];
-+#endif
++	struct led_classdev *leds;
 +};
-+
-+enum gc_rumble {
-+	GC_RUMBLE_OFF = 0,
-+	GC_RUMBLE_ON = 1,
-+	GC_RUMBLE_STOP = 2,
-+};
-+
-+/*
-+ * The highest rumble level for "HD Rumble" is strong enough to potentially damage the controller,
-+ * and also leaves your hands feeling like melted jelly, so we set a semi-arbitrary scaling factor
-+ * to artificially limit the maximum for safety and comfort. It is currently unknown if the Switch
-+ * 2 itself does something similar, but it's quite likely.
-+ *
-+ * This value must be between 0 and 1024, otherwise the math below will overflow.
-+ */
-+#define RUMBLE_MAX 450u
-+
-+/*
-+ * Semi-arbitrary values used to simulate the "rumble" sensation of an eccentric rotating
-+ * mass type haptic motor on the Switch 2 controllers' linear resonant actuator type haptics.
-+ *
-+ * The units used are unknown, but the values must be between 0 and 1023.
-+ */
-+#define RUMBLE_HI_FREQ 0x187
-+#define RUMBLE_LO_FREQ 0x112
 +
 +static DEFINE_MUTEX(switch2_controllers_lock);
 +static LIST_HEAD(switch2_controllers);
@@ -460,22 +403,6 @@ index e7302ec01f..9cb4a503fe 100644
 +	{ /* sentinel */ },
 +};
 +
-+static const struct switch2_ctlr_button_mapping ns2_left_joycon_button_unified_mappings[] = {
-+	{ BTN_DPAD_LEFT,	2, NS2_BTN_U3_LEFT,	},
-+	{ BTN_DPAD_UP,		2, NS2_BTN_U3_UP,	},
-+	{ BTN_DPAD_DOWN,	2, NS2_BTN_U3_DOWN,	},
-+	{ BTN_DPAD_RIGHT,	2, NS2_BTN_U3_RIGHT,	},
-+	{ BTN_TL,		2, NS2_BTN_U3_L,	},
-+	{ BTN_TL2,		2, NS2_BTN_U3_ZL,	},
-+	{ BTN_SELECT,		1, NS2_BTN_U2_MINUS,	},
-+	{ BTN_THUMBL,		1, NS2_BTN_U2_LS,	},
-+	{ KEY_RECORD,		1, NS2_BTN_U2_CAPTURE,	},
-+	{ BTN_GRIPR,		2, NS2_BTN_U3_SL,	},
-+	{ BTN_GRIPR2,		2, NS2_BTN_U3_SR,	},
-+	{ BTN_GRIPL,		3, NS2_BTN_U4_GL,	},
-+	{ /* sentinel */ },
-+};
-+
 +static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_mappings[] = {
 +	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
 +	{ BTN_EAST,	0, NS2_BTNR_B,		},
@@ -493,28 +420,11 @@ index e7302ec01f..9cb4a503fe 100644
 +	{ /* sentinel */ },
 +};
 +
-+static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_unified_mappings[] = {
-+	{ BTN_SOUTH,	0, NS2_BTN_U1_A,	},
-+	{ BTN_EAST,	0, NS2_BTN_U1_B,	},
-+	{ BTN_NORTH,	0, NS2_BTN_U1_X,	},
-+	{ BTN_WEST,	0, NS2_BTN_U1_Y,	},
-+	{ BTN_TR,	0, NS2_BTN_U1_R,	},
-+	{ BTN_TR2,	0, NS2_BTN_U1_ZR	},
-+	{ BTN_START,	1, NS2_BTN_U2_PLUS,	},
-+	{ BTN_THUMBR,	1, NS2_BTN_U2_RS,	},
-+	{ BTN_C,	1, NS2_BTN_U2_C,	},
-+	{ BTN_MODE,	1, NS2_BTN_U2_HOME,	},
-+	{ BTN_GRIPL2,	0, NS2_BTN_U1_SL,	},
-+	{ BTN_GRIPL,	0, NS2_BTN_U1_SR,	},
-+	{ BTN_GRIPR,	3, NS2_BTN_U4_GR,	},
-+	{ /* sentinel */ },
-+};
-+
 +static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
-+	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
-+	{ BTN_EAST,	0, NS2_BTNR_B,		},
-+	{ BTN_NORTH,	0, NS2_BTNR_X,		},
-+	{ BTN_WEST,	0, NS2_BTNR_Y,		},
++	{ BTN_SOUTH,	0, NS2_BTNR_B,		},
++	{ BTN_EAST,	0, NS2_BTNR_A,		},
++	{ BTN_NORTH,	0, NS2_BTNR_Y,		},
++	{ BTN_WEST,	0, NS2_BTNR_X,		},
 +	{ BTN_TL,	1, NS2_BTNL_L,		},
 +	{ BTN_TR,	0, NS2_BTNR_R,		},
 +	{ BTN_TL2,	1, NS2_BTNL_ZL,		},
@@ -528,27 +438,6 @@ index e7302ec01f..9cb4a503fe 100644
 +	{ BTN_GRIPR,	2, NS2_BTN_PRO_GR	},
 +	{ BTN_GRIPL,	2, NS2_BTN_PRO_GL	},
 +	{ BTN_C,	2, NS2_BTN_PRO_C	},
-+	{ /* sentinel */ },
-+};
-+
-+static const struct switch2_ctlr_button_mapping ns2_procon_unified_mappings[] = {
-+	{ BTN_SOUTH,	0, NS2_BTN_U1_A,	},
-+	{ BTN_EAST,	0, NS2_BTN_U1_B,	},
-+	{ BTN_NORTH,	0, NS2_BTN_U1_X,	},
-+	{ BTN_WEST,	0, NS2_BTN_U1_Y,	},
-+	{ BTN_TL,	2, NS2_BTN_U3_L,	},
-+	{ BTN_TR,	0, NS2_BTN_U1_R,	},
-+	{ BTN_TL2,	2, NS2_BTN_U3_ZL,	},
-+	{ BTN_TR2,	0, NS2_BTN_U1_ZR,	},
-+	{ BTN_SELECT,	1, NS2_BTN_U2_MINUS,	},
-+	{ BTN_START,	1, NS2_BTN_U2_PLUS,	},
-+	{ BTN_THUMBL,	1, NS2_BTN_U2_LS,	},
-+	{ BTN_THUMBR,	1, NS2_BTN_U2_RS,	},
-+	{ BTN_MODE,	1, NS2_BTN_U2_HOME	},
-+	{ KEY_RECORD,	1, NS2_BTN_U2_CAPTURE	},
-+	{ BTN_GRIPR,	3, NS2_BTN_U4_GR	},
-+	{ BTN_GRIPL,	3, NS2_BTN_U4_GL	},
-+	{ BTN_C,	1, NS2_BTN_U2_C		},
 +	{ /* sentinel */ },
 +};
 +
@@ -569,23 +458,6 @@ index e7302ec01f..9cb4a503fe 100644
 +	{ /* sentinel */ },
 +};
 +
-+static const struct switch2_ctlr_button_mapping ns2_gccon_unified_mappings[] = {
-+	{ BTN_SOUTH,	0, NS2_BTN_U1_A,	},
-+	{ BTN_EAST,	0, NS2_BTN_U1_B,	},
-+	{ BTN_NORTH,	0, NS2_BTN_U1_X,	},
-+	{ BTN_WEST,	0, NS2_BTN_U1_Y,	},
-+	{ BTN_TL2,	2, NS2_BTN_U3_L,	},
-+	{ BTN_TR2,	0, NS2_BTN_U1_R,	},
-+	{ BTN_TL,	2, NS2_BTN_U3_ZL	},
-+	{ BTN_TR,	0, NS2_BTN_U1_ZR	},
-+	{ BTN_SELECT,	1, NS2_BTN_U2_MINUS,	},
-+	{ BTN_START,	1, NS2_BTN_U2_PLUS,	},
-+	{ BTN_MODE,	1, NS2_BTN_U2_HOME	},
-+	{ KEY_RECORD,	1, NS2_BTN_U2_CAPTURE	},
-+	{ BTN_C,	1, NS2_BTN_U2_C		},
-+	{ /* sentinel */ },
-+};
-+
 +static const uint8_t switch2_init_cmd_data[] = {
 +	/*
 +	 * The last 6 bytes of this packet are the MAC address of
@@ -595,14 +467,13 @@ index e7302ec01f..9cb4a503fe 100644
 +};
 +
 +static const uint8_t switch2_one_data[] = { 0x01, 0x00, 0x00, 0x00 };
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+static const uint8_t switch2_zero_data[] = { 0x00, 0x00, 0x00, 0x00 };
-+#endif
 +
 +static const uint8_t switch2_feature_mask[] = {
-+	NS2_FEATURE_BUTTONS | NS2_FEATURE_ANALOG | NS2_FEATURE_IMU | NS2_FEATURE_RUMBLE,
++	NS2_FEATURE_BUTTONS | NS2_FEATURE_ANALOG | NS2_FEATURE_IMU,
 +	0x00, 0x00, 0x00
 +};
++
++static int switch2_init_controller(struct switch2_controller *ns2);
 +
 +static void switch2_init_step_done(struct switch2_controller *ns2, enum switch2_init_step step)
 +{
@@ -618,106 +489,58 @@ index e7302ec01f..9cb4a503fe 100644
 +	return type == NS2_CTLR_TYPE_JCL || type == NS2_CTLR_TYPE_JCR;
 +}
 +
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+static void switch2_encode_rumble(struct switch2_hd_rumble *rumble, uint8_t buffer[5])
++static struct switch2_controller *switch2_get_controller(const char *phys)
 +{
-+	buffer[0] = rumble->hi_freq;
-+	buffer[1] = (rumble->hi_freq >> 8) | (rumble->hi_amp << 2);
-+	buffer[2] = (rumble->hi_amp >> 6) | (rumble->lo_freq << 4);
-+	buffer[3] = (rumble->lo_freq >> 4) | (rumble->lo_amp << 6);
-+	buffer[4] = rumble->lo_amp >> 2;
-+}
++	struct switch2_controller *ns2;
 +
-+static int switch2_play_effect(struct input_dev *dev, void *data, struct ff_effect *effect)
-+{
-+	struct switch2_controller *ns2 = input_get_drvdata(dev);
-+
-+	if (effect->type != FF_RUMBLE)
-+		return 0;
-+
-+	guard(spinlock_irqsave)(&ns2->rumble_lock);
-+	if (ns2->ctlr_type == NS2_CTLR_TYPE_GC) {
-+		ns2->rumble.sd.amplitude = max(effect->u.rumble.strong_magnitude,
-+			(uint16_t) (effect->u.rumble.weak_magnitude >> 1));
-+	} else {
-+		ns2->rumble.hd.hi_freq = RUMBLE_HI_FREQ;
-+		ns2->rumble.hd.lo_freq = RUMBLE_LO_FREQ;
-+		ns2->rumble.hd.hi_amp = effect->u.rumble.weak_magnitude * RUMBLE_MAX >> 16;
-+		ns2->rumble.hd.lo_amp = effect->u.rumble.strong_magnitude * RUMBLE_MAX >> 16;
-+	}
-+
-+	if (ns2->hdev)
-+		schedule_delayed_work(&ns2->rumble_work, 0);
-+
-+	return 0;
-+}
-+
-+static void switch2_rumble_work(struct work_struct *work)
-+{
-+	struct switch2_controller *ns2 = container_of(to_delayed_work(work),
-+						      struct switch2_controller, rumble_work);
-+	unsigned long flags;
-+	bool active;
-+	int ret = 0;
-+
-+	spin_lock_irqsave(&ns2->rumble_lock, flags);
-+	ns2->rumble_buffer[0x1] = 0x50 | ns2->rumble_seq;
-+	if (ns2->ctlr_type == NS2_CTLR_TYPE_GC) {
-+		ns2->rumble_buffer[0] = 3;
-+		if (ns2->rumble.sd.amplitude == 0) {
-+			ns2->rumble_buffer[2] = GC_RUMBLE_STOP;
-+			ns2->rumble.sd.error = 0;
-+			active = false;
-+		} else {
-+			if (ns2->rumble.sd.error < ns2->rumble.sd.amplitude) {
-+				ns2->rumble_buffer[2] = GC_RUMBLE_ON;
-+				ns2->rumble.sd.error += U16_MAX - ns2->rumble.sd.amplitude;
-+			} else {
-+				ns2->rumble_buffer[2] = GC_RUMBLE_OFF;
-+				ns2->rumble.sd.error -= ns2->rumble.sd.amplitude;
-+			}
-+			active = true;
-+		}
-+	} else {
-+		ns2->rumble_buffer[0] = 1;
-+		switch2_encode_rumble(&ns2->rumble.hd, &ns2->rumble_buffer[0x2]);
-+		active = ns2->rumble.hd.hi_amp || ns2->rumble.hd.lo_amp;
-+		if (ns2->ctlr_type == NS2_CTLR_TYPE_PRO) {
-+			/*
-+			 * The Pro Controller contains separate LRAs on each
-+			 * side that can be controlled individually.
-+			 */
-+			ns2->rumble_buffer[0] = 2;
-+			ns2->rumble_buffer[0x11] = 0x50 | ns2->rumble_seq;
-+			switch2_encode_rumble(&ns2->rumble.hd, &ns2->rumble_buffer[0x12]);
++	guard(mutex)(&switch2_controllers_lock);
++	list_for_each_entry(ns2, &switch2_controllers, entry) {
++		if (strncmp(ns2->phys, phys, sizeof(ns2->phys)) == 0) {
++			if (kref_get_unless_zero(&ns2->refcount))
++				return ns2;
 +		}
 +	}
-+	ns2->rumble_seq = (ns2->rumble_seq + 1) & 0xF;
++	ns2 = kzalloc(sizeof(*ns2), GFP_KERNEL);
++	if (!ns2)
++		return ERR_PTR(-ENOMEM);
 +
-+	if (active) {
-+		unsigned long interval = msecs_to_jiffies(2);
-+		uint64_t current_jiffies = get_jiffies_64();
-+
-+		if (!ns2->last_rumble_work)
-+			ns2->last_rumble_work = current_jiffies;
-+		else
-+			ns2->last_rumble_work += interval;
-+		schedule_delayed_work(&ns2->rumble_work,
-+			ns2->last_rumble_work + interval - current_jiffies);
-+	} else {
-+		ns2->last_rumble_work = 0;
-+	}
-+	spin_unlock_irqrestore(&ns2->rumble_lock, flags);
-+
-+	if (!ns2->hdev)
-+		cancel_delayed_work(&ns2->rumble_work);
-+	else
-+		ret = hid_hw_output_report(ns2->hdev, ns2->rumble_buffer, 64);
-+
-+	if (ret < 0)
-+		hid_warn_ratelimited(ns2->hdev, "Failed to send output report ret=%d\n", ret);
++	kref_init(&ns2->refcount);
++	mutex_init(&ns2->lock);
++	INIT_LIST_HEAD(&ns2->entry);
++	list_add(&ns2->entry, &switch2_controllers);
++	strscpy(ns2->phys, phys, sizeof(ns2->phys));
++	return ns2;
 +}
-+#endif
++
++static void switch2_controller_put(struct switch2_controller *ns2)
++{
++	struct input_dev *input;
++
++	mutex_lock(&ns2->lock);
++	rcu_read_lock();
++	input = rcu_dereference(ns2->input);
++	rcu_read_unlock();
++
++	rcu_assign_pointer(ns2->input, NULL);
++	synchronize_rcu();
++
++	ns2->init_step = 0;
++	mutex_unlock(&ns2->lock);
++
++	if (input)
++		input_unregister_device(input);
++}
++
++static void switch2_kref_put(struct kref *refcount)
++{
++	struct switch2_controller *ns2 = container_of(refcount,
++					struct switch2_controller, refcount);
++
++	guard(mutex)(&switch2_controllers_lock);
++	list_del_init(&ns2->entry);
++	mutex_destroy(&ns2->lock);
++	kfree(ns2);
++}
 +
 +static int switch2_set_leds(struct switch2_controller *ns2)
 +{
@@ -738,33 +561,14 @@ index e7302ec01f..9cb4a503fe 100644
 +					    enum led_brightness brightness)
 +{
 +	struct device *dev = led->dev->parent;
-+	struct hid_device *hdev = to_hid_device(dev);
-+	struct switch2_controller *ns2 = hid_get_drvdata(hdev);
++	struct input_dev *input = to_input_dev(dev);
++	struct switch2_controller *ns2 = input_get_drvdata(input);
 +
 +	if (!ns2)
 +		return -ENODEV;
 +
 +	guard(mutex)(&ns2->lock);
 +	return switch2_set_leds(ns2);
-+}
-+
-+static void switch2_leds_create(struct switch2_controller *ns2)
-+{
-+	struct hid_device *hdev = ns2->hdev;
-+	struct led_classdev *led;
-+	int i;
-+	int player_led_pattern;
-+
-+	player_led_pattern = ns2->player_id % JC_NUM_LED_PATTERNS;
-+	hid_dbg(hdev, "assigned player %d led pattern", player_led_pattern + 1);
-+
-+	for (i = 0; i < JC_NUM_LEDS; i++) {
-+		led = &ns2->leds[i];
-+		led->brightness = joycon_player_led_patterns[player_led_pattern][i];
-+		led->max_brightness = 1;
-+		led->brightness_set_blocking = switch2_player_led_brightness_set;
-+		led->flags = LED_CORE_SUSPENDRESUME | LED_HW_PLUGGABLE;
-+	}
 +}
 +
 +static void switch2_config_buttons(struct input_dev *idev,
@@ -776,27 +580,46 @@ index e7302ec01f..9cb4a503fe 100644
 +		input_set_capability(idev, EV_KEY, button->code);
 +}
 +
++static int switch2_input_ref(struct input_dev *input)
++{
++	struct switch2_controller *ns2 = input_get_drvdata(input);
++
++	kref_get(&ns2->refcount);
++
++	return 0;
++}
++
++static void switch2_input_deref(struct input_dev *input)
++{
++	struct switch2_controller *ns2 = input_get_drvdata(input);
++
++	kref_put(&ns2->refcount, switch2_kref_put);
++}
++
 +static int switch2_init_input(struct switch2_controller *ns2)
 +{
 +	struct input_dev *input;
 +	struct hid_device *hdev = ns2->hdev;
++	int player_led_pattern;
 +	int i;
 +	int ret;
-+
-+	switch2_init_step_done(ns2, NS2_INIT_FINISH);
 +
 +	rcu_read_lock();
 +	input = rcu_dereference(ns2->input);
 +	rcu_read_unlock();
 +
-+	if (input)
++	if (input) {
++		switch2_init_step_done(ns2, NS2_INIT_INPUT);
 +		return 0;
++	}
 +
-+	input = devm_input_allocate_device(&hdev->dev);
++	input = input_allocate_device();
 +	if (!input)
 +		return -ENOMEM;
 +
 +	input_set_drvdata(input, ns2);
++	input->open = switch2_input_ref;
++	input->close = switch2_input_deref;
 +	input->dev.parent = &hdev->dev;
 +	input->id.bustype = hdev->bus;
 +	input->id.vendor = hdev->vendor;
@@ -842,15 +665,6 @@ index e7302ec01f..9cb4a503fe 100644
 +		return -EINVAL;
 +	}
 +
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+	input_set_capability(input, EV_FF, FF_RUMBLE);
-+	ret = input_ff_create_memless(input, NULL, switch2_play_effect);
-+	if (ret) {
-+		input_free_device(input);
-+		return ret;
-+	}
-+#endif
-+
 +	hid_info(ns2->hdev, "Firmware version %u.%u.%u (type %i)\n", ns2->version.major,
 +		ns2->version.minor, ns2->version.patch, ns2->version.ctlr_type);
 +	if (ns2->version.dsp_type >= 0)
@@ -864,16 +678,32 @@ index e7302ec01f..9cb4a503fe 100644
 +		return ret;
 +	}
 +
++	player_led_pattern = ns2->player_id % JC_NUM_LED_PATTERNS;
++	hid_dbg(hdev, "assigned player %d led pattern", player_led_pattern + 1);
++
++	ns2->leds = devm_kcalloc(&input->dev, JC_NUM_LEDS, sizeof(*ns2->leds), GFP_KERNEL);
++	if (!ns2->leds) {
++		hid_err(ns2->hdev, "Failed to allocate LEDs\n");
++		input_free_device(input);
++		return -ENOMEM;
++	}
++
 +	for (i = 0; i < JC_NUM_LEDS; i++) {
 +		struct led_classdev *led = &ns2->leds[i];
++
++		led->brightness = joycon_player_led_patterns[player_led_pattern][i];
++		led->max_brightness = 1;
++		led->brightness_set_blocking = switch2_player_led_brightness_set;
++		led->flags = LED_CORE_SUSPENDRESUME | LED_HW_PLUGGABLE | LED_RETAIN_AT_SHUTDOWN;
 +		char *name = devm_kasprintf(&input->dev, GFP_KERNEL, "%s:%s:%s",
 +				      dev_name(&input->dev),
 +				      "green",
 +				      joycon_player_led_names[i]);
 +
 +		if (!name) {
-+			input_unregister_device(input);
-+			return -ENOMEM;
++			dev_err(&input->dev, "Failed to allocate name for player %d LED; ret=%d\n",
++				i + 1, ret);
++			break;
 +		}
 +
 +		led->name = name;
@@ -881,67 +711,15 @@ index e7302ec01f..9cb4a503fe 100644
 +		if (ret < 0) {
 +			dev_err(&input->dev, "Failed to register player %d LED; ret=%d\n",
 +				i + 1, ret);
-+			input_unregister_device(input);
-+			return ret;
++			break;
 +		}
 +	}
 +
 +	rcu_assign_pointer(ns2->input, input);
 +	synchronize_rcu();
-+	return 0;
-+}
 +
-+static struct switch2_controller *switch2_get_controller(const char *phys)
-+{
-+	struct switch2_controller *ns2;
-+
-+	guard(mutex)(&switch2_controllers_lock);
-+	list_for_each_entry(ns2, &switch2_controllers, entry) {
-+		if (strncmp(ns2->phys, phys, sizeof(ns2->phys)) == 0)
-+			return ns2;
-+	}
-+	ns2 = kzalloc(sizeof(*ns2), GFP_KERNEL);
-+	if (!ns2)
-+		return ERR_PTR(-ENOMEM);
-+
-+	mutex_init(&ns2->lock);
-+	INIT_LIST_HEAD(&ns2->entry);
-+	list_add(&ns2->entry, &switch2_controllers);
-+	strscpy(ns2->phys, phys, sizeof(ns2->phys));
-+	return ns2;
-+}
-+
-+static void switch2_controller_put(struct switch2_controller *ns2)
-+{
-+	struct input_dev *input;
-+	bool do_free;
-+
-+	guard(mutex)(&switch2_controllers_lock);
-+	mutex_lock(&ns2->lock);
-+
-+	rcu_read_lock();
-+	input = rcu_dereference(ns2->input);
-+	rcu_read_unlock();
-+
-+	rcu_assign_pointer(ns2->input, NULL);
-+	synchronize_rcu();
-+
-+	ns2->init_step = 0;
-+	do_free = !ns2->hdev && !ns2->cfg;
-+	mutex_unlock(&ns2->lock);
-+
-+	if (input)
-+		input_unregister_device(input);
-+
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+	cancel_delayed_work_sync(&ns2->rumble_work);
-+#endif
-+
-+	if (do_free) {
-+		list_del_init(&ns2->entry);
-+		mutex_destroy(&ns2->lock);
-+		kfree(ns2);
-+	}
++	switch2_init_step_done(ns2, NS2_INIT_INPUT);
++	return switch2_init_controller(ns2);
 +}
 +
 +static bool switch2_parse_stick_calibration(struct switch2_stick_calibration *calib,
@@ -991,18 +769,20 @@ index e7302ec01f..9cb4a503fe 100644
 +			return;
 +		switch2_init_step_done(ns2, NS2_INIT_READ_FACTORY_PRIMARY_CALIB);
 +		ok = switch2_parse_stick_calibration(&ns2->stick_calib[0], data);
-+		if (ok) {
-+			hid_dbg(ns2->hdev, "Got factory primary stick calibration:\n");
-+			hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
-+				ns2->stick_calib[0].x.negative,
-+				ns2->stick_calib[0].x.neutral,
-+				ns2->stick_calib[0].x.positive);
-+			hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
-+				ns2->stick_calib[0].y.negative,
-+				ns2->stick_calib[0].y.neutral,
-+				ns2->stick_calib[0].y.positive);
-+		} else {
-+			hid_dbg(ns2->hdev, "Factory primary stick calibration not present\n");
++		if (ns2->hdev) {
++			if (ok) {
++				hid_dbg(ns2->hdev, "Got factory primary stick calibration:\n");
++				hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
++					ns2->stick_calib[0].x.negative,
++					ns2->stick_calib[0].x.neutral,
++					ns2->stick_calib[0].x.positive);
++				hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
++					ns2->stick_calib[0].y.negative,
++					ns2->stick_calib[0].y.neutral,
++					ns2->stick_calib[0].y.positive);
++			} else {
++				hid_dbg(ns2->hdev, "Factory primary stick calibration not present\n");
++			}
 +		}
 +		break;
 +	case NS2_FLASH_ADDR_FACTORY_SECONDARY_CALIB:
@@ -1010,18 +790,20 @@ index e7302ec01f..9cb4a503fe 100644
 +			return;
 +		switch2_init_step_done(ns2, NS2_INIT_READ_FACTORY_SECONDARY_CALIB);
 +		ok = switch2_parse_stick_calibration(&ns2->stick_calib[1], data);
-+		if (ok) {
-+			hid_dbg(ns2->hdev, "Got factory secondary stick calibration:\n");
-+			hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
-+				ns2->stick_calib[1].x.negative,
-+				ns2->stick_calib[1].x.neutral,
-+				ns2->stick_calib[1].x.positive);
-+			hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
-+				ns2->stick_calib[1].y.negative,
-+				ns2->stick_calib[1].y.neutral,
-+				ns2->stick_calib[1].y.positive);
-+		} else {
-+			hid_dbg(ns2->hdev, "Factory secondary stick calibration not present\n");
++		if (ns2->hdev) {
++			if (ok) {
++				hid_dbg(ns2->hdev, "Got factory secondary stick calibration:\n");
++				hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
++					ns2->stick_calib[1].x.negative,
++					ns2->stick_calib[1].x.neutral,
++					ns2->stick_calib[1].x.positive);
++				hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
++					ns2->stick_calib[1].y.negative,
++					ns2->stick_calib[1].y.neutral,
++					ns2->stick_calib[1].y.positive);
++			} else {
++				hid_dbg(ns2->hdev, "Factory secondary stick calibration not present\n");
++			}
 +		}
 +		break;
 +	case NS2_FLASH_ADDR_FACTORY_TRIGGER_CALIB:
@@ -1032,10 +814,12 @@ index e7302ec01f..9cb4a503fe 100644
 +			ns2->lt_zero = data[0];
 +			ns2->rt_zero = data[1];
 +
-+			hid_dbg(ns2->hdev, "Got factory trigger calibration:\n");
-+			hid_dbg(ns2->hdev, "Left zero point: %i\n", ns2->lt_zero);
-+			hid_dbg(ns2->hdev, "Right zero point: %i\n", ns2->rt_zero);
-+		} else {
++			if (ns2->hdev) {
++				hid_dbg(ns2->hdev, "Got factory trigger calibration:\n");
++				hid_dbg(ns2->hdev, "Left zero point: %i\n", ns2->lt_zero);
++				hid_dbg(ns2->hdev, "Right zero point: %i\n", ns2->rt_zero);
++			}
++		} else if (ns2->hdev) {
 +			hid_dbg(ns2->hdev, "Factory trigger calibration not present\n");
 +		}
 +		break;
@@ -1043,48 +827,54 @@ index e7302ec01f..9cb4a503fe 100644
 +		if (size != NS2_FLASH_SIZE_USER_AXIS_CALIB)
 +			return;
 +		switch2_init_step_done(ns2, NS2_INIT_READ_USER_PRIMARY_CALIB);
-+		if (__le16_to_cpu(*(__le16 *)data) != NS2_USER_CALIB_MAGIC) {
-+			hid_dbg(ns2->hdev, "No user primary stick calibration present\n");
++		if (get_unaligned_le16((__le16 *)data) != NS2_USER_CALIB_MAGIC) {
++			if (ns2->hdev)
++				hid_dbg(ns2->hdev, "No user primary stick calibration present\n");
 +			break;
 +		}
 +
 +		ok = switch2_parse_stick_calibration(&ns2->stick_calib[0], &data[2]);
-+		if (ok) {
-+			hid_dbg(ns2->hdev, "Got user primary stick calibration:\n");
-+			hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
-+				ns2->stick_calib[0].x.negative,
-+				ns2->stick_calib[0].x.neutral,
-+				ns2->stick_calib[0].x.positive);
-+			hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
-+				ns2->stick_calib[0].y.negative,
-+				ns2->stick_calib[0].y.neutral,
-+				ns2->stick_calib[0].y.positive);
-+		} else {
-+			hid_dbg(ns2->hdev, "No user primary stick calibration present\n");
++		if (ns2->hdev) {
++			if (ok) {
++				hid_dbg(ns2->hdev, "Got user primary stick calibration:\n");
++				hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
++					ns2->stick_calib[0].x.negative,
++					ns2->stick_calib[0].x.neutral,
++					ns2->stick_calib[0].x.positive);
++				hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
++					ns2->stick_calib[0].y.negative,
++					ns2->stick_calib[0].y.neutral,
++					ns2->stick_calib[0].y.positive);
++			} else {
++				hid_dbg(ns2->hdev, "No user primary stick calibration present\n");
++			}
 +		}
 +		break;
 +	case NS2_FLASH_ADDR_USER_SECONDARY_CALIB:
 +		if (size != NS2_FLASH_SIZE_USER_AXIS_CALIB)
 +			return;
 +		switch2_init_step_done(ns2, NS2_INIT_READ_USER_SECONDARY_CALIB);
-+		if (__le16_to_cpu(*(__le16 *)data) != NS2_USER_CALIB_MAGIC) {
-+			hid_dbg(ns2->hdev, "No user secondary stick calibration present\n");
++		if (get_unaligned_le16((__le16 *)data) != NS2_USER_CALIB_MAGIC) {
++			if (ns2->hdev)
++				hid_dbg(ns2->hdev, "No user secondary stick calibration present\n");
 +			break;
 +		}
 +
 +		ok = switch2_parse_stick_calibration(&ns2->stick_calib[1], &data[2]);
-+		if (ok) {
-+			hid_dbg(ns2->hdev, "Got user secondary stick calibration:\n");
-+			hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
-+				ns2->stick_calib[1].x.negative,
-+				ns2->stick_calib[1].x.neutral,
-+				ns2->stick_calib[1].x.positive);
-+			hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
-+				ns2->stick_calib[1].y.negative,
-+				ns2->stick_calib[1].y.neutral,
-+				ns2->stick_calib[1].y.positive);
-+		} else {
-+			hid_dbg(ns2->hdev, "No user secondary stick calibration present\n");
++		if (ns2->hdev) {
++			if (ok) {
++				hid_dbg(ns2->hdev, "Got user secondary stick calibration:\n");
++				hid_dbg(ns2->hdev, "Left max: %i, neutral: %i, right max: %i\n",
++					ns2->stick_calib[1].x.negative,
++					ns2->stick_calib[1].x.neutral,
++					ns2->stick_calib[1].x.positive);
++				hid_dbg(ns2->hdev, "Down max: %i, neutral: %i, up max: %i\n",
++					ns2->stick_calib[1].y.negative,
++					ns2->stick_calib[1].y.neutral,
++					ns2->stick_calib[1].y.positive);
++			} else {
++				hid_dbg(ns2->hdev, "No user secondary stick calibration present\n");
++			}
 +		}
 +		break;
 +	}
@@ -1144,7 +934,7 @@ index e7302ec01f..9cb4a503fe 100644
 +	if (report->type != HID_INPUT_REPORT)
 +		return 0;
 +
-+	if (size < 17)
++	if (size < 15)
 +		return -EINVAL;
 +
 +	guard(rcu)();
@@ -1155,51 +945,11 @@ index e7302ec01f..9cb4a503fe 100644
 +
 +	switch (report->id) {
 +	case NS2_REPORT_UNIFIED:
-+		switch (ns2->ctlr_type) {
-+		case NS2_CTLR_TYPE_JCL:
-+			switch2_report_stick(input, &ns2->stick_calib[0],
-+				ABS_X, false, ABS_Y, true, &raw_data[11]);
-+			switch2_report_buttons(input, &raw_data[5],
-+				ns2_left_joycon_button_unified_mappings);
-+			break;
-+		case NS2_CTLR_TYPE_JCR:
-+			switch2_report_stick(input, &ns2->stick_calib[0],
-+				ABS_X, false, ABS_Y, true, &raw_data[14]);
-+			switch2_report_buttons(input, &raw_data[5],
-+				ns2_right_joycon_button_unified_mappings);
-+			break;
-+		case NS2_CTLR_TYPE_GC:
-+			if (size < 0x3f)
-+				return -EINVAL;
-+
-+			input_report_abs(input, ABS_HAT0X,
-+				!!(raw_data[7] & NS2_BTN_U3_RIGHT) -
-+				!!(raw_data[7] & NS2_BTN_U3_LEFT));
-+			input_report_abs(input, ABS_HAT0Y,
-+				!!(raw_data[7] & NS2_BTN_U3_DOWN) -
-+				!!(raw_data[7] & NS2_BTN_U3_UP));
-+			switch2_report_buttons(input, &raw_data[5], ns2_gccon_unified_mappings);
-+			switch2_report_stick(input, &ns2->stick_calib[0],
-+				ABS_X, false, ABS_Y, true, &raw_data[11]);
-+			switch2_report_stick(input, &ns2->stick_calib[1],
-+				ABS_RX, false, ABS_RY, true, &raw_data[14]);
-+			switch2_report_trigger(input, ns2->lt_zero, ABS_Z, raw_data[0x3d]);
-+			switch2_report_trigger(input, ns2->rt_zero, ABS_RZ, raw_data[0x3e]);
-+			break;
-+		case NS2_CTLR_TYPE_PRO:
-+			input_report_abs(input, ABS_HAT0X,
-+				!!(raw_data[7] & NS2_BTN_U3_RIGHT) -
-+				!!(raw_data[7] & NS2_BTN_U3_LEFT));
-+			input_report_abs(input, ABS_HAT0Y,
-+				!!(raw_data[7] & NS2_BTN_U3_DOWN) -
-+				!!(raw_data[7] & NS2_BTN_U3_UP));
-+			switch2_report_buttons(input, &raw_data[5], ns2_procon_unified_mappings);
-+			switch2_report_stick(input, &ns2->stick_calib[0],
-+				ABS_X, false, ABS_Y, true, &raw_data[11]);
-+			switch2_report_stick(input, &ns2->stick_calib[1],
-+				ABS_RX, false, ABS_RY, true, &raw_data[14]);
-+			break;
-+		}
++		/*
++		 * TODO
++		 * This won't be sent unless the report type gets changed via command
++		 * 03-0A, but we should support it at some point regardless.
++		 */
 +		break;
 +	case NS2_REPORT_JCL:
 +		switch2_report_stick(input, &ns2->stick_calib[0], ABS_X, false,
@@ -1292,7 +1042,7 @@ index e7302ec01f..9cb4a503fe 100644
 +		ns2->cfg);
 +}
 +
-+static int switch2_init_controller(struct switch2_controller *ns2)
++int switch2_init_controller(struct switch2_controller *ns2)
 +{
 +	if (ns2->init_step == NS2_INIT_DONE)
 +		return 0;
@@ -1347,16 +1097,7 @@ index e7302ec01f..9cb4a503fe 100644
 +		return ns2->cfg->send_command(NS2_CMD_FEATSEL, NS2_SUBCMD_FEATSEL_SET_MASK,
 +			switch2_feature_mask, sizeof(switch2_feature_mask), ns2->cfg);
 +	case NS2_INIT_ENABLE_FEATURES:
-+		return switch2_features_enable(ns2, NS2_FEATURE_BUTTONS |
-+			NS2_FEATURE_ANALOG | NS2_FEATURE_RUMBLE);
-+	case NS2_INIT_ENABLE_RUMBLE:
-+		/*
-+		 * It is unclear what this packet is supposed to be for, but it
-+		 * appears to be needed for rumble to work reliably. The reply
-+		 * data indicates it might be a query of some sort, but we
-+		 * ignore the reply so long as it doesn't return an error.
-+		 */
-+		return ns2->cfg->send_command(0x11, 1, NULL, 0, ns2->cfg);
++		return switch2_features_enable(ns2, NS2_FEATURE_BUTTONS | NS2_FEATURE_ANALOG);
 +	case NS2_INIT_GRIP_BUTTONS:
 +		if (!switch2_ctlr_is_joycon(ns2->ctlr_type)) {
 +			switch2_init_step_done(ns2, ns2->init_step);
@@ -1379,15 +1120,15 @@ index e7302ec01f..9cb4a503fe 100644
 +			switch2_init_step_done(ns2, ns2->init_step);
 +			return switch2_init_controller(ns2);
 +		}
-+	case NS2_INIT_SET_PLAYER_LEDS:
-+		return switch2_set_player_id(ns2, ns2->player_id);
 +	case NS2_INIT_INPUT:
-+		return ns2->cfg->send_command(NS2_CMD_INIT, NS2_SUBCMD_INIT_USB,
-+			switch2_init_cmd_data, sizeof(switch2_init_cmd_data), ns2->cfg);
-+	case NS2_INIT_FINISH:
 +		if (ns2->hdev)
 +			return switch2_init_input(ns2);
 +		break;
++	case NS2_INIT_SET_PLAYER_LEDS:
++		return switch2_set_player_id(ns2, ns2->player_id);
++	case NS2_INIT_FINISH:
++		return ns2->cfg->send_command(NS2_CMD_INIT, NS2_SUBCMD_INIT_USB,
++			switch2_init_cmd_data, sizeof(switch2_init_cmd_data), ns2->cfg);
 +	default:
 +		WARN_ON_ONCE(1);
 +		break;
@@ -1406,7 +1147,7 @@ index e7302ec01f..9cb4a503fe 100644
 +
 +	print_hex_dump_debug("got cmd: ", DUMP_PREFIX_OFFSET, 16, 1, message, length, false);
 +
-+	guard(mutex)(&ns2->lock);
++	mutex_lock(&ns2->lock);
 +
 +	header = (const struct switch2_cmd_header *)message;
 +	if (!(header->flags & NS2_FLAG_OK)) {
@@ -1439,7 +1180,7 @@ index e7302ec01f..9cb4a503fe 100644
 +		break;
 +	case NS2_CMD_INIT:
 +		if (header->subcommand == NS2_SUBCMD_INIT_USB)
-+			switch2_init_step_done(ns2, NS2_INIT_INPUT);
++			switch2_init_step_done(ns2, NS2_INIT_FINISH);
 +		else if (header->subcommand == NS2_SUBCMD_INIT_SELECT_REPORT)
 +			switch2_init_step_done(ns2, NS2_INIT_REPORT_FORMAT);
 +		break;
@@ -1468,10 +1209,6 @@ index e7302ec01f..9cb4a503fe 100644
 +			switch2_init_step_done(ns2, NS2_INIT_GET_FIRMWARE_INFO);
 +		}
 +		break;
-+	case 0x11:
-+		if (header->subcommand == 1)
-+			switch2_init_step_done(ns2, NS2_INIT_ENABLE_RUMBLE);
-+		break;
 +	default:
 +		break;
 +	}
@@ -1480,6 +1217,7 @@ index e7302ec01f..9cb4a503fe 100644
 +	if (ns2->init_step < NS2_INIT_DONE)
 +		switch2_init_controller(ns2);
 +
++	mutex_unlock(&ns2->lock);
 +	return ret;
 +}
 +EXPORT_SYMBOL_GPL(switch2_receive_command);
@@ -1492,17 +1230,27 @@ index e7302ec01f..9cb4a503fe 100644
 +	if (IS_ERR(ns2))
 +		return PTR_ERR(ns2);
 +
++	mutex_lock(&ns2->lock);
++	if (ns2->cfg) {
++		ret = -EBUSY;
++		goto out;
++	}
 +	cfg->parent = ns2;
-+
-+	guard(mutex)(&ns2->lock);
-+	WARN_ON(ns2->cfg);
 +	ns2->cfg = cfg;
 +
-+	if (ns2->hdev) {
++	if (ns2->hdev)
 +		ret = switch2_init_controller(ns2);
-+		if (ret < 0)
-+			ns2->cfg = NULL;
++
++	if (ret < 0) {
++		cfg->parent = NULL;
++		ns2->cfg = NULL;
 +	}
++
++out:
++	mutex_unlock(&ns2->lock);
++
++	if (ret < 0)
++		kref_put(&ns2->refcount, switch2_kref_put);
 +	return ret;
 +}
 +EXPORT_SYMBOL_GPL(switch2_controller_attach_cfg);
@@ -1510,10 +1258,15 @@ index e7302ec01f..9cb4a503fe 100644
 +void switch2_controller_detach_cfg(struct switch2_controller *ns2)
 +{
 +	mutex_lock(&ns2->lock);
-+	WARN_ON(ns2 != ns2->cfg->parent);
++	if (!ns2->cfg || WARN_ON(ns2 != ns2->cfg->parent)) {
++		mutex_unlock(&ns2->lock);
++		return;
++	}
++	ns2->cfg->parent = NULL;
 +	ns2->cfg = NULL;
 +	mutex_unlock(&ns2->lock);
 +	switch2_controller_put(ns2);
++	kref_put(&ns2->refcount, switch2_kref_put);
 +}
 +EXPORT_SYMBOL_GPL(switch2_controller_detach_cfg);
 +
@@ -1537,22 +1290,22 @@ index e7302ec01f..9cb4a503fe 100644
 +		return ret;
 +	}
 +
-+	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
-+	if (ret) {
-+		hid_err(hdev, "hw_start failed %d\n", ret);
-+		return ret;
-+	}
-+
 +	ns2 = switch2_get_controller(phys);
-+	if (IS_ERR(ns2)) {
-+		ret = PTR_ERR(ns2);
-+		hid_hw_close(hdev);
-+		goto err_stop;
-+	}
++	if (IS_ERR(ns2))
++		return PTR_ERR(ns2);
 +
 +	mutex_lock(&ns2->lock);
-+	WARN_ON(ns2->hdev);
++	if (ns2->hdev) {
++		mutex_unlock(&ns2->lock);
++		hid_err(hdev,
++			"Second hdev tried to claim same controller, first=%p vs second=%p\n",
++			ns2->hdev, hdev);
++		kref_put(&ns2->refcount, switch2_kref_put);
++		return -EBUSY;
++	}
 +	ns2->hdev = hdev;
++	hid_set_drvdata(hdev, ns2);
++
 +	switch (hdev->product | (hdev->vendor << 16)) {
 +	default:
 +		strscpy(ns2->name, hdev->name, sizeof(ns2->name));
@@ -1575,18 +1328,16 @@ index e7302ec01f..9cb4a503fe 100644
 +	else
 +		ns2->player_id = ret;
 +
-+	switch2_leds_create(ns2);
-+
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+	spin_lock_init(&ns2->rumble_lock);
-+	INIT_DELAYED_WORK(&ns2->rumble_work, switch2_rumble_work);
-+#endif
-+	hid_set_drvdata(hdev, ns2);
++	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
++	if (ret) {
++		hid_err(hdev, "hw_start failed %d\n", ret);
++		goto err_cleanup;
++	}
 +
 +	ret = hid_hw_open(hdev);
 +	if (ret) {
 +		hid_err(hdev, "hw_open failed %d\n", ret);
-+		goto err_cleanup;
++		goto err_stop;
 +	}
 +
 +	ret = 0;
@@ -1598,17 +1349,15 @@ index e7302ec01f..9cb4a503fe 100644
 +		return 0;
 +	}
 +
-+err_cleanup:
 +	hid_hw_close(hdev);
++err_stop:
++	hid_hw_stop(hdev);
++err_cleanup:
 +	ida_free(&nintendo_player_id_allocator, ns2->player_id);
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+	cancel_delayed_work_sync(&ns2->rumble_work);
-+#endif
 +	ns2->hdev = NULL;
 +	mutex_unlock(&ns2->lock);
 +	switch2_controller_put(ns2);
-+err_stop:
-+	hid_hw_stop(hdev);
++	kref_put(&ns2->refcount, switch2_kref_put);
 +
 +	return ret;
 +}
@@ -1617,16 +1366,13 @@ index e7302ec01f..9cb4a503fe 100644
 +{
 +	struct switch2_controller *ns2 = hid_get_drvdata(hdev);
 +
-+	hid_hw_close(hdev);
-+#if IS_ENABLED(CONFIG_NINTENDO_FF)
-+	cancel_delayed_work_sync(&ns2->rumble_work);
-+#endif
-+	mutex_lock(&ns2->lock);
-+	WARN_ON(ns2->hdev != hdev);
-+	ns2->hdev = NULL;
-+	mutex_unlock(&ns2->lock);
-+	ida_free(&nintendo_player_id_allocator, ns2->player_id);
 +	switch2_controller_put(ns2);
++	mutex_lock(&ns2->lock);
++	ns2->hdev = NULL;
++	ida_free(&nintendo_player_id_allocator, ns2->player_id);
++	mutex_unlock(&ns2->lock);
++	kref_put(&ns2->refcount, switch2_kref_put);
++	hid_hw_close(hdev);
 +	hid_hw_stop(hdev);
 +}
 +
@@ -1635,7 +1381,7 @@ index e7302ec01f..9cb4a503fe 100644
  	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
  			 USB_DEVICE_ID_NINTENDO_PROCON) },
  	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
-@@ -2863,10 +4345,67 @@ static const struct hid_device_id nintendo_hid_devices[] = {
+@@ -2863,10 +4069,67 @@ static const struct hid_device_id nintendo_hid_devices[] = {
  			 USB_DEVICE_ID_NINTENDO_N64CON) },
  	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_HORI,
  			 USB_DEVICE_ID_HORI_WIRELESS_SWITCH_PAD) },
@@ -1703,7 +1449,7 @@ index e7302ec01f..9cb4a503fe 100644
  static struct hid_driver nintendo_hid_driver = {
  	.name		= "nintendo",
  	.id_table	= nintendo_hid_devices,
-@@ -2894,4 +4433,5 @@ MODULE_LICENSE("GPL");
+@@ -2894,4 +4157,5 @@ MODULE_LICENSE("GPL");
  MODULE_AUTHOR("Ryan McClelland <rymcclel@gmail.com>");
  MODULE_AUTHOR("Emily Strickland <linux@emily.st>");
  MODULE_AUTHOR("Daniel J. Ogorchock <djogorchock@gmail.com>");
@@ -1821,10 +1567,10 @@ index 9976f596a9..8f92900ae8 100644
  obj-$(CONFIG_JOYSTICK_TWIDJOY)		+= twidjoy.o
 diff --git a/drivers/input/joystick/nintendo-switch2-usb.c b/drivers/input/joystick/nintendo-switch2-usb.c
 new file mode 100644
-index 0000000000..3ed6de4994
+index 0000000000..a6999a0a26
 --- /dev/null
 +++ b/drivers/input/joystick/nintendo-switch2-usb.c
-@@ -0,0 +1,396 @@
+@@ -0,0 +1,468 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * USB driver for Nintendo Switch 2 controllers configuration interface
@@ -1865,6 +1611,7 @@ index 0000000000..3ed6de4994
 +
 +	struct switch2_urb bulk_in[NS2_IN_URBS];
 +	struct usb_anchor bulk_in_anchor;
++	bool shutdown;
 +	spinlock_t bulk_in_lock;
 +
 +	struct switch2_urb bulk_out[NS2_OUT_URBS];
@@ -1888,8 +1635,8 @@ index 0000000000..3ed6de4994
 +	case -ECONNRESET:
 +	case -ENOENT:
 +	case -ESHUTDOWN:
-+		dev_dbg(&ns2_usb->udev->dev, "shutting down input urb: %d\n", urb->status);
-+		return;
++	case -EPIPE:
++		break;
 +	default:
 +		dev_dbg(&ns2_usb->udev->dev, "unknown input urb status: %d\n", urb->status);
 +		break;
@@ -1901,14 +1648,29 @@ index 0000000000..3ed6de4994
 +		struct switch2_urb *ns2_urb;
 +
 +		if (ns2_usb->bulk_in[i].urb == urb) {
-+			ns2_usb->bulk_in[i].state = NS2_URB_IN;
-+			continue;
++			if (schedule) {
++				ns2_usb->bulk_in[i].state = NS2_URB_IN;
++				continue;
++			} else {
++				ns2_usb->bulk_in[i].state = NS2_URB_FREE;
++			}
 +		}
 +
 +		if (ns2_usb->bulk_in[i].state != NS2_URB_FREE)
 +			continue;
 +
++		/*
++		 * We want exactly one bulk in URB scheduled at a time, so only
++		 * reschedule this immediately if nothing else is scheduled
++		 * currently.
++		 */
++		if (!usb_anchor_empty(&ns2_usb->bulk_in_anchor) || ns2_usb->shutdown)
++			continue;
++
 +		ns2_urb = &ns2_usb->bulk_in[i];
++		if (!ns2_urb)
++			continue;
++
 +		usb_anchor_urb(ns2_urb->urb, &ns2_usb->bulk_in_anchor);
 +		err = usb_submit_urb(ns2_urb->urb, GFP_ATOMIC);
 +		if (err) {
@@ -1937,11 +1699,11 @@ index 0000000000..3ed6de4994
 +	case -ECONNRESET:
 +	case -ENOENT:
 +	case -ESHUTDOWN:
-+		dev_dbg(&ns2_usb->udev->dev, "shutting down output urb: %d\n", urb->status);
-+		return;
++	case -EPIPE:
++		break;
 +	default:
 +		dev_dbg(&ns2_usb->udev->dev, "unknown output urb status: %d\n", urb->status);
-+		return;
++		break;
 +	}
 +
 +	for (i = 0; i < NS2_OUT_URBS; i++) {
@@ -1994,11 +1756,13 @@ index 0000000000..3ed6de4994
 +		size + sizeof(header), false);
 +
 +	usb_anchor_urb(urb->urb, &ns2_usb->bulk_out_anchor);
-+	ret = usb_submit_urb(urb->urb, GFP_ATOMIC);
++	ret = usb_submit_urb(urb->urb, GFP_KERNEL);
 +	if (ret) {
 +		if (ret != -ENODEV)
 +			dev_warn(&ns2_usb->udev->dev, "failed to submit output urb: %i", ret);
++		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
 +		urb->state = NS2_URB_FREE;
++		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
 +		usb_unanchor_urb(urb->urb);
 +		return ret;
 +	}
@@ -2021,13 +1785,35 @@ index 0000000000..3ed6de4994
 +			continue;
 +		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
 +
-+		err = switch2_receive_command(ns2_usb->cfg.parent,
-+			urb->urb->transfer_buffer, urb->urb->actual_length);
-+		if (err)
-+			dev_dbg(&ns2_usb->udev->dev, "receive command failed: %d\n", err);
++		if (ns2_usb->cfg.parent) {
++			err = switch2_receive_command(ns2_usb->cfg.parent,
++				urb->urb->transfer_buffer, urb->urb->actual_length);
++			if (err)
++				dev_dbg(&ns2_usb->udev->dev, "receive command failed: %d\n", err);
++		} else {
++			dev_err(&ns2_usb->udev->dev,
++				"Got message before controller is fully set up; discarding\n");
++		}
 +
 +		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
 +		urb->state = NS2_URB_FREE;
++		/*
++		 * We want exactly one bulk in URB scheduled at a time, so only
++		 * reschedule this immediately if nothing else is scheduled
++		 * currently.
++		 */
++		if (!usb_anchor_empty(&ns2_usb->bulk_in_anchor) || ns2_usb->shutdown)
++			continue;
++
++		usb_anchor_urb(urb->urb, &ns2_usb->bulk_in_anchor);
++		err = usb_submit_urb(urb->urb, GFP_ATOMIC);
++		if (err) {
++			usb_unanchor_urb(urb->urb);
++			dev_dbg(&ns2_usb->udev->dev,
++				"failed to queue input urb: %d\n", err);
++		} else {
++			urb->state = NS2_URB_OUT;
++		}
 +	}
 +	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
 +}
@@ -2037,6 +1823,8 @@ index 0000000000..3ed6de4994
 +	struct switch2_usb *ns2_usb;
 +	struct usb_device *udev;
 +	struct usb_endpoint_descriptor *bulk_in, *bulk_out;
++	struct urb *urb;
++	uint8_t *data;
 +	char phys[64];
 +	int ret;
 +	int i;
@@ -2064,9 +1852,6 @@ index 0000000000..3ed6de4994
 +
 +	ns2_usb->udev = udev;
 +	for (i = 0; i < NS2_IN_URBS; i++) {
-+		struct urb *urb;
-+		uint8_t *data;
-+
 +		urb = usb_alloc_urb(0, GFP_KERNEL);
 +		if (!urb) {
 +			ret = -ENOMEM;
@@ -2093,13 +1878,10 @@ index 0000000000..3ed6de4994
 +	}
 +
 +	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		struct urb *urb;
-+		uint8_t *data;
-+
 +		urb = usb_alloc_urb(0, GFP_KERNEL);
 +		if (!urb) {
 +			ret = -ENOMEM;
-+			goto err_free_in;
++			goto err_free_out;
 +		}
 +
 +		data = usb_alloc_coherent(udev, NS2_BULK_SIZE, GFP_KERNEL,
@@ -2143,28 +1925,45 @@ index 0000000000..3ed6de4994
 +
 +err_free_out:
 +	usb_kill_anchored_urbs(&ns2_usb->bulk_out_anchor);
-+	spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
 +	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		if (!ns2_usb->bulk_out[i].urb)
++		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
++		urb = ns2_usb->bulk_out[i].urb;
++		data = ns2_usb->bulk_out[i].data;
++		if (!urb) {
++			spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
 +			continue;
++		}
 +
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, ns2_usb->bulk_out[i].data,
-+			ns2_usb->bulk_out[i].urb->transfer_dma);
-+		usb_free_urb(ns2_usb->bulk_out[i].urb);
++		ns2_usb->bulk_out[i].urb = NULL;
++		ns2_usb->bulk_out[i].data = NULL;
++		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++
++		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
++		usb_free_urb(urb);
 +	}
-+	spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
 +err_free_in:
-+	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
 +	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+	for (i = 0; i < NS2_IN_URBS; i++) {
-+		if (!ns2_usb->bulk_in[i].urb)
-+			continue;
-+
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, ns2_usb->bulk_in[i].data,
-+			ns2_usb->bulk_in[i].urb->transfer_dma);
-+		usb_free_urb(ns2_usb->bulk_in[i].urb);
-+	}
++	ns2_usb->shutdown = true;
 +	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
++	cancel_work_sync(&ns2_usb->message_in_work);
++	for (i = 0; i < NS2_IN_URBS; i++) {
++		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++		urb = ns2_usb->bulk_in[i].urb;
++		data = ns2_usb->bulk_in[i].data;
++		if (!urb) {
++			spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++			continue;
++		}
++
++		ns2_usb->bulk_in[i].urb = NULL;
++		ns2_usb->bulk_in[i].data = NULL;
++		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
++		usb_free_urb(urb);
++	}
 +	devm_kfree(&intf->dev, ns2_usb);
 +
 +	return ret;
@@ -2174,28 +1973,47 @@ index 0000000000..3ed6de4994
 +{
 +	struct switch2_usb *ns2_usb = usb_get_intfdata(intf);
 +	unsigned long flags;
++	struct urb *urb;
++	uint8_t *data;
 +	int i;
 +
-+	usb_kill_anchored_urbs(&ns2_usb->bulk_out_anchor);
-+	spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
-+	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, ns2_usb->bulk_out[i].data,
-+			ns2_usb->bulk_out[i].urb->transfer_dma);
-+		usb_free_urb(ns2_usb->bulk_out[i].urb);
-+	}
-+	spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++	/* Prevent any further IN URBs from being scheduled */
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	ns2_usb->shutdown = true;
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
 +
 +	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
 +	cancel_work_sync(&ns2_usb->message_in_work);
-+	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
 +	for (i = 0; i < NS2_IN_URBS; i++) {
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, ns2_usb->bulk_in[i].data,
-+			ns2_usb->bulk_in[i].urb->transfer_dma);
-+		usb_free_urb(ns2_usb->bulk_in[i].urb);
-+	}
-+	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++		urb = ns2_usb->bulk_in[i].urb;
++		data = ns2_usb->bulk_in[i].data;
++		ns2_usb->bulk_in[i].urb = NULL;
++		ns2_usb->bulk_in[i].data = NULL;
++		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
 +
++		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
++		usb_free_urb(urb);
++	}
++
++	/*
++	 * We need to detach *before* we kill the out URBs to make sure no
++	 * further URBs get scheduled by the HID endpoint in the meantime.
++	 */
 +	switch2_controller_detach_cfg(ns2_usb->cfg.parent);
++
++	usb_kill_anchored_urbs(&ns2_usb->bulk_out_anchor);
++	for (i = 0; i < NS2_OUT_URBS; i++) {
++		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
++		urb = ns2_usb->bulk_out[i].urb;
++		data = ns2_usb->bulk_out[i].data;
++		ns2_usb->bulk_out[i].urb = NULL;
++		ns2_usb->bulk_out[i].data = NULL;
++		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++
++		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
++		usb_free_urb(urb);
++	}
 +}
 +
 +#define SWITCH2_CONTROLLER(vend, prod) \
@@ -2211,7 +2029,7 @@ index 0000000000..3ed6de4994
 +MODULE_DEVICE_TABLE(usb, switch2_usb_devices);
 +
 +static struct usb_driver switch2_usb = {
-+	.name		= "switch2",
++	.name		= "nintendo-switch2",
 +	.id_table	= switch2_usb_devices,
 +	.probe		= switch2_usb_probe,
 +	.disconnect	= switch2_usb_disconnect,
@@ -2221,3 +2039,559 @@ index 0000000000..3ed6de4994
 +MODULE_LICENSE("GPL");
 +MODULE_AUTHOR("Vicki Pfau <vi@endrift.com>");
 +MODULE_DESCRIPTION("Driver for Nintendo Switch 2 Controllers");
+-- 
+2.55.0
+
+
+From 87bccb2a45b5223192bb786e3c8cabd1c8bc5726 Mon Sep 17 00:00:00 2001
+From: Vicki Pfau <vi@endrift.com>
+Date: Wed, 1 Jul 2026 20:41:03 -0700
+Subject: [PATCH 2/3] HID: nintendo: Add rumble support for Switch 2
+ controllers
+
+This adds rumble support for both the "HD Rumble" linear resonant actuator
+type as used in the Joy-Cons and Pro Controller, as well as the eccentric
+rotating mass type used in the GameCube controller. Note that since there's
+currently no API for exposing full control of LRAs with evdev, it only
+simulates a basic rumble for now.
+
+Signed-off-by: Vicki Pfau <vi@endrift.com>
+---
+ drivers/hid/Kconfig        |   8 +-
+ drivers/hid/hid-nintendo.c | 214 ++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 216 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
+index 19c77c323e..851eed76c2 100644
+--- a/drivers/hid/Kconfig
++++ b/drivers/hid/Kconfig
+@@ -859,10 +859,10 @@ config NINTENDO_FF
+ 	depends on HID_NINTENDO
+ 	select INPUT_FF_MEMLESS
+ 	help
+-	Say Y here if you have a Nintendo Switch controller and want to enable
+-	force feedback support for it. This works for both joy-cons, the pro
+-	controller, and the NSO N64 controller. For the pro controller, both
+-	rumble motors can be controlled individually.
++	Say Y here if you have a Nintendo Switch or Switch 2 controller and want
++	to enable force feedback support for it. This works for Joy-Cons, the Pro
++	Controllers, and the NSO N64 and GameCube controller. For the Pro
++	Controller, both rumble motors can be controlled individually.
+ 
+ config HID_NTI
+ 	tristate "NTI keyboard adapters"
+diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
+index f82034decb..71a04c4382 100644
+--- a/drivers/hid/hid-nintendo.c
++++ b/drivers/hid/hid-nintendo.c
+@@ -37,6 +37,7 @@
+ #include <linux/unaligned.h>
+ #include <linux/delay.h>
+ #include <linux/device.h>
++#include <linux/devm-helpers.h>
+ #include <linux/kernel.h>
+ #include <linux/hid.h>
+ #include <linux/idr.h>
+@@ -2989,6 +2990,7 @@ enum switch2_init_step {
+ 	NS2_INIT_READ_USER_SECONDARY_CALIB,
+ 	NS2_INIT_SET_FEATURE_MASK,
+ 	NS2_INIT_ENABLE_FEATURES,
++	NS2_INIT_ENABLE_RUMBLE,
+ 	NS2_INIT_GRIP_BUTTONS,
+ 	NS2_INIT_REPORT_FORMAT,
+ 	NS2_INIT_INPUT,
+@@ -3020,6 +3022,18 @@ struct switch2_stick_calibration {
+ 	struct switch2_axis_calibration y;
+ };
+ 
++struct switch2_hd_rumble {
++	uint16_t hi_freq : 10;
++	uint16_t hi_amp : 10;
++	uint16_t lo_freq : 10;
++	uint16_t lo_amp : 10;
++} __packed;
++
++struct switch2_erm_rumble {
++	uint16_t error;
++	uint16_t amplitude;
++};
++
+ struct switch2_controller {
+ 	struct hid_device *hdev;
+ 	struct switch2_cfg_intf *cfg;
+@@ -3043,8 +3057,45 @@ struct switch2_controller {
+ 
+ 	uint32_t player_id;
+ 	struct led_classdev *leds;
++
++#if IS_ENABLED(CONFIG_NINTENDO_FF)
++	spinlock_t rumble_lock;
++	uint8_t rumble_seq;
++	union {
++		struct switch2_hd_rumble hd;
++		struct switch2_erm_rumble sd;
++	} rumble;
++	uint64_t last_rumble_work;
++	struct delayed_work rumble_work;
++	uint8_t *rumble_buffer;
++#endif
+ };
+ 
++enum gc_rumble {
++	GC_RUMBLE_OFF = 0,
++	GC_RUMBLE_ON = 1,
++	GC_RUMBLE_STOP = 2,
++};
++
++/*
++ * The highest rumble level for "HD Rumble" is strong enough to potentially damage the controller,
++ * and also leaves your hands feeling like melted jelly, so we set a semi-arbitrary scaling factor
++ * to artificially limit the maximum for safety and comfort. It is currently unknown if the Switch
++ * 2 itself does something similar, but it's quite likely.
++ *
++ * This value must be between 0 and 1024, otherwise the math below will overflow.
++ */
++#define RUMBLE_MAX 450u
++
++/*
++ * Semi-arbitrary values used to simulate the "rumble" sensation of an eccentric rotating
++ * mass type haptic motor on the Switch 2 controllers' linear resonant actuator type haptics.
++ *
++ * The units used are unknown, but the values must be between 0 and 1023.
++ */
++#define RUMBLE_HI_FREQ 0x187
++#define RUMBLE_LO_FREQ 0x112
++
+ static DEFINE_MUTEX(switch2_controllers_lock);
+ static LIST_HEAD(switch2_controllers);
+ 
+@@ -3136,7 +3187,7 @@ static const uint8_t switch2_init_cmd_data[] = {
+ static const uint8_t switch2_one_data[] = { 0x01, 0x00, 0x00, 0x00 };
+ 
+ static const uint8_t switch2_feature_mask[] = {
+-	NS2_FEATURE_BUTTONS | NS2_FEATURE_ANALOG | NS2_FEATURE_IMU,
++	NS2_FEATURE_BUTTONS | NS2_FEATURE_ANALOG | NS2_FEATURE_IMU | NS2_FEATURE_RUMBLE,
+ 	0x00, 0x00, 0x00
+ };
+ 
+@@ -3209,6 +3260,125 @@ static void switch2_kref_put(struct kref *refcount)
+ 	kfree(ns2);
+ }
+ 
++#if IS_ENABLED(CONFIG_NINTENDO_FF)
++static void switch2_encode_rumble(struct switch2_hd_rumble *rumble, uint8_t buffer[5])
++{
++	buffer[0] = rumble->hi_freq;
++	buffer[1] = (rumble->hi_freq >> 8) | (rumble->hi_amp << 2);
++	buffer[2] = (rumble->hi_amp >> 6) | (rumble->lo_freq << 4);
++	buffer[3] = (rumble->lo_freq >> 4) | (rumble->lo_amp << 6);
++	buffer[4] = rumble->lo_amp >> 2;
++}
++
++static int switch2_play_effect(struct input_dev *dev, void *data, struct ff_effect *effect)
++{
++	struct switch2_controller *ns2 = input_get_drvdata(dev);
++	unsigned long flags;
++
++	if (effect->type != FF_RUMBLE)
++		return 0;
++
++	spin_lock_irqsave(&ns2->rumble_lock, flags);
++	if (ns2->ctlr_type == NS2_CTLR_TYPE_GC) {
++		ns2->rumble.sd.amplitude = max(effect->u.rumble.strong_magnitude,
++			(uint16_t) (effect->u.rumble.weak_magnitude >> 1));
++	} else {
++		ns2->rumble.hd.hi_freq = RUMBLE_HI_FREQ;
++		ns2->rumble.hd.lo_freq = RUMBLE_LO_FREQ;
++		ns2->rumble.hd.hi_amp = effect->u.rumble.weak_magnitude * RUMBLE_MAX >> 16;
++		ns2->rumble.hd.lo_amp = effect->u.rumble.strong_magnitude * RUMBLE_MAX >> 16;
++	}
++	spin_unlock_irqrestore(&ns2->rumble_lock, flags);
++
++	schedule_delayed_work(&ns2->rumble_work, 0);
++
++	return 0;
++}
++
++static void switch2_rumble_work(struct work_struct *work)
++{
++	struct switch2_controller *ns2 = container_of(to_delayed_work(work),
++						      struct switch2_controller, rumble_work);
++	unsigned long flags;
++	bool active;
++	int ret = 0;
++
++	spin_lock_irqsave(&ns2->rumble_lock, flags);
++	ns2->rumble_buffer[0x1] = 0x50 | ns2->rumble_seq;
++	if (ns2->ctlr_type == NS2_CTLR_TYPE_GC) {
++		ns2->rumble_buffer[0] = 3;
++		if (ns2->rumble.sd.amplitude == 0) {
++			ns2->rumble_buffer[2] = GC_RUMBLE_STOP;
++			ns2->rumble.sd.error = 0;
++			active = false;
++		} else {
++			if (ns2->rumble.sd.error < ns2->rumble.sd.amplitude) {
++				ns2->rumble_buffer[2] = GC_RUMBLE_ON;
++				ns2->rumble.sd.error += U16_MAX - ns2->rumble.sd.amplitude;
++			} else {
++				ns2->rumble_buffer[2] = GC_RUMBLE_OFF;
++				ns2->rumble.sd.error -= ns2->rumble.sd.amplitude;
++			}
++			active = true;
++		}
++	} else {
++		ns2->rumble_buffer[0] = 1;
++		switch2_encode_rumble(&ns2->rumble.hd, &ns2->rumble_buffer[0x2]);
++		active = ns2->rumble.hd.hi_amp || ns2->rumble.hd.lo_amp;
++		if (ns2->ctlr_type == NS2_CTLR_TYPE_PRO) {
++			/*
++			 * The Pro Controller contains separate LRAs on each
++			 * side that can be controlled individually.
++			 */
++			ns2->rumble_buffer[0] = 2;
++			ns2->rumble_buffer[0x11] = 0x50 | ns2->rumble_seq;
++			switch2_encode_rumble(&ns2->rumble.hd, &ns2->rumble_buffer[0x12]);
++		}
++	}
++	ns2->rumble_seq = (ns2->rumble_seq + 1) & 0xF;
++	spin_unlock_irqrestore(&ns2->rumble_lock, flags);
++
++	if (active) {
++		unsigned long interval = msecs_to_jiffies(4);
++		uint64_t current_jiffies = get_jiffies_64();
++
++		if (!ns2->last_rumble_work)
++			ns2->last_rumble_work = current_jiffies;
++		else
++			ns2->last_rumble_work += interval;
++
++		/* Reschedule a little early to make sure the buffer never underruns */
++		interval -= msecs_to_jiffies(2);
++		if (ns2->last_rumble_work + interval >= current_jiffies)
++			schedule_delayed_work(&ns2->rumble_work,
++				ns2->last_rumble_work + interval - current_jiffies);
++		else
++			schedule_delayed_work(&ns2->rumble_work, 0);
++	} else {
++		ns2->last_rumble_work = 0;
++	}
++
++	mutex_lock(&ns2->lock);
++	if (!ns2->hdev) {
++		cancel_delayed_work(&ns2->rumble_work);
++	} else {
++		ret = hid_hw_output_report(ns2->hdev, ns2->rumble_buffer, 64);
++		/*
++		 * Don't log on ENODEV, ESHUTDOWN, or EPROTO, which can happen
++		 * mid-hotplug. Also cancel any further work on ENODEV or
++		 * ESHUTDOWN as they're clear indications that the endpoint
++		 * is dead.
++		 */
++		if (ret == -ENODEV || ret == -ESHUTDOWN)
++			cancel_delayed_work(&ns2->rumble_work);
++		else if (ret < 0 && ret != -EPROTO)
++			hid_warn_ratelimited(ns2->hdev,
++				"Failed to send output report ret=%d\n", ret);
++	}
++	mutex_unlock(&ns2->lock);
++}
++#endif
++
+ static int switch2_set_leds(struct switch2_controller *ns2)
+ {
+ 	int i;
+@@ -3332,6 +3502,26 @@ static int switch2_init_input(struct switch2_controller *ns2)
+ 		return -EINVAL;
+ 	}
+ 
++#if IS_ENABLED(CONFIG_NINTENDO_FF)
++	ns2->rumble_buffer = devm_kzalloc(&input->dev, 64, GFP_KERNEL);
++	if (!ns2->rumble_buffer) {
++		input_free_device(input);
++		return -ENOMEM;
++	}
++	ret = devm_delayed_work_autocancel(&input->dev, &ns2->rumble_work, switch2_rumble_work);
++	if (ret < 0) {
++		input_free_device(input);
++		return ret;
++	}
++
++	input_set_capability(input, EV_FF, FF_RUMBLE);
++	ret = input_ff_create_memless(input, NULL, switch2_play_effect);
++	if (ret) {
++		input_free_device(input);
++		return ret;
++	}
++#endif
++
+ 	hid_info(ns2->hdev, "Firmware version %u.%u.%u (type %i)\n", ns2->version.major,
+ 		ns2->version.minor, ns2->version.patch, ns2->version.ctlr_type);
+ 	if (ns2->version.dsp_type >= 0)
+@@ -3764,7 +3954,16 @@ int switch2_init_controller(struct switch2_controller *ns2)
+ 		return ns2->cfg->send_command(NS2_CMD_FEATSEL, NS2_SUBCMD_FEATSEL_SET_MASK,
+ 			switch2_feature_mask, sizeof(switch2_feature_mask), ns2->cfg);
+ 	case NS2_INIT_ENABLE_FEATURES:
+-		return switch2_features_enable(ns2, NS2_FEATURE_BUTTONS | NS2_FEATURE_ANALOG);
++		return switch2_features_enable(ns2, NS2_FEATURE_BUTTONS |
++			NS2_FEATURE_ANALOG | NS2_FEATURE_RUMBLE);
++	case NS2_INIT_ENABLE_RUMBLE:
++		/*
++		 * It is unclear what this packet is supposed to be for, but it
++		 * appears to be needed for rumble to work reliably. The reply
++		 * data indicates it might be a query of some sort, but we
++		 * ignore the reply so long as it doesn't return an error.
++		 */
++		return ns2->cfg->send_command(0x11, 1, NULL, 0, ns2->cfg);
+ 	case NS2_INIT_GRIP_BUTTONS:
+ 		if (!switch2_ctlr_is_joycon(ns2->ctlr_type)) {
+ 			switch2_init_step_done(ns2, ns2->init_step);
+@@ -3876,6 +4075,10 @@ int switch2_receive_command(struct switch2_controller *ns2,
+ 			switch2_init_step_done(ns2, NS2_INIT_GET_FIRMWARE_INFO);
+ 		}
+ 		break;
++	case 0x11:
++		if (header->subcommand == 1)
++			switch2_init_step_done(ns2, NS2_INIT_ENABLE_RUMBLE);
++		break;
+ 	default:
+ 		break;
+ 	}
+@@ -3995,6 +4198,10 @@ static int switch2_probe(struct hid_device *hdev, const struct hid_device_id *id
+ 	else
+ 		ns2->player_id = ret;
+ 
++#if IS_ENABLED(CONFIG_NINTENDO_FF)
++	spin_lock_init(&ns2->rumble_lock);
++#endif
++
+ 	ret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);
+ 	if (ret) {
+ 		hid_err(hdev, "hw_start failed %d\n", ret);
+@@ -4038,6 +4245,9 @@ static void switch2_remove(struct hid_device *hdev)
+ 	ns2->hdev = NULL;
+ 	ida_free(&nintendo_player_id_allocator, ns2->player_id);
+ 	mutex_unlock(&ns2->lock);
++#if IS_ENABLED(CONFIG_NINTENDO_FF)
++	cancel_delayed_work_sync(&ns2->rumble_work);
++#endif
+ 	kref_put(&ns2->refcount, switch2_kref_put);
+ 	hid_hw_close(hdev);
+ 	hid_hw_stop(hdev);
+-- 
+2.55.0
+
+
+From 73f8f585205a0ddc17c9f8fee2db3f3766d7837b Mon Sep 17 00:00:00 2001
+From: Vicki Pfau <vi@endrift.com>
+Date: Wed, 1 Jul 2026 20:41:04 -0700
+Subject: [PATCH 3/3] HID: nintendo: Add unified report format support
+
+This adds support for the "unified" report format that all controllers also
+support, which has overlapping fields for like buttons and axes between
+them.
+
+Signed-off-by: Vicki Pfau <vi@endrift.com>
+---
+ drivers/hid/hid-nintendo.c | 151 +++++++++++++++++++++++++++++++++++--
+ 1 file changed, 146 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
+index 71a04c4382..d87fae2f64 100644
+--- a/drivers/hid/hid-nintendo.c
++++ b/drivers/hid/hid-nintendo.c
+@@ -2873,6 +2873,36 @@ static int joycon_suspend(struct hid_device *hdev, pm_message_t message)
+ #define NS2_BTN3_SR	BIT(6)
+ #define NS2_BTN3_SL	BIT(7)
+ 
++#define NS2_BTN_U1_Y	BIT(0)
++#define NS2_BTN_U1_X	BIT(1)
++#define NS2_BTN_U1_B	BIT(2)
++#define NS2_BTN_U1_A	BIT(3)
++#define NS2_BTN_U1_SR	BIT(4)
++#define NS2_BTN_U1_SL	BIT(5)
++#define NS2_BTN_U1_R	BIT(6)
++#define NS2_BTN_U1_ZR	BIT(7)
++
++#define NS2_BTN_U2_MINUS	BIT(0)
++#define NS2_BTN_U2_PLUS		BIT(1)
++#define NS2_BTN_U2_RS		BIT(2)
++#define NS2_BTN_U2_LS		BIT(3)
++#define NS2_BTN_U2_HOME		BIT(4)
++#define NS2_BTN_U2_CAPTURE	BIT(5)
++#define NS2_BTN_U2_C		BIT(6)
++
++#define NS2_BTN_U3_DOWN		BIT(0)
++#define NS2_BTN_U3_UP		BIT(1)
++#define NS2_BTN_U3_RIGHT	BIT(2)
++#define NS2_BTN_U3_LEFT		BIT(3)
++#define NS2_BTN_U3_SR		BIT(4)
++#define NS2_BTN_U3_SL		BIT(5)
++#define NS2_BTN_U3_L		BIT(6)
++#define NS2_BTN_U3_ZL		BIT(7)
++
++#define NS2_BTN_U4_GR		BIT(0)
++#define NS2_BTN_U4_GL		BIT(1)
++#define NS2_BTN_U4_HEADSET	BIT(5)
++
+ #define NS2_BTN_JCR_HOME	BIT(0)
+ #define NS2_BTN_JCR_GR		BIT(2)
+ #define NS2_BTN_JCR_C		NS2_BTN3_C
+@@ -3121,6 +3151,22 @@ static const struct switch2_ctlr_button_mapping ns2_left_joycon_button_mappings[
+ 	{ /* sentinel */ },
+ };
+ 
++static const struct switch2_ctlr_button_mapping ns2_left_joycon_button_unified_mappings[] = {
++	{ BTN_DPAD_LEFT,	2, NS2_BTN_U3_LEFT,	},
++	{ BTN_DPAD_UP,		2, NS2_BTN_U3_UP,	},
++	{ BTN_DPAD_DOWN,	2, NS2_BTN_U3_DOWN,	},
++	{ BTN_DPAD_RIGHT,	2, NS2_BTN_U3_RIGHT,	},
++	{ BTN_TL,		2, NS2_BTN_U3_L,	},
++	{ BTN_TL2,		2, NS2_BTN_U3_ZL,	},
++	{ BTN_SELECT,		1, NS2_BTN_U2_MINUS,	},
++	{ BTN_THUMBL,		1, NS2_BTN_U2_LS,	},
++	{ KEY_RECORD,		1, NS2_BTN_U2_CAPTURE,	},
++	{ BTN_GRIPR,		2, NS2_BTN_U3_SL,	},
++	{ BTN_GRIPR2,		2, NS2_BTN_U3_SR,	},
++	{ BTN_GRIPL,		3, NS2_BTN_U4_GL,	},
++	{ /* sentinel */ },
++};
++
+ static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_mappings[] = {
+ 	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
+ 	{ BTN_EAST,	0, NS2_BTNR_B,		},
+@@ -3138,6 +3184,23 @@ static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_mappings
+ 	{ /* sentinel */ },
+ };
+ 
++static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_unified_mappings[] = {
++	{ BTN_SOUTH,	0, NS2_BTN_U1_A,	},
++	{ BTN_EAST,	0, NS2_BTN_U1_B,	},
++	{ BTN_NORTH,	0, NS2_BTN_U1_X,	},
++	{ BTN_WEST,	0, NS2_BTN_U1_Y,	},
++	{ BTN_TR,	0, NS2_BTN_U1_R,	},
++	{ BTN_TR2,	0, NS2_BTN_U1_ZR	},
++	{ BTN_START,	1, NS2_BTN_U2_PLUS,	},
++	{ BTN_THUMBR,	1, NS2_BTN_U2_RS,	},
++	{ BTN_C,	1, NS2_BTN_U2_C,	},
++	{ BTN_MODE,	1, NS2_BTN_U2_HOME,	},
++	{ BTN_GRIPL2,	0, NS2_BTN_U1_SL,	},
++	{ BTN_GRIPL,	0, NS2_BTN_U1_SR,	},
++	{ BTN_GRIPR,	3, NS2_BTN_U4_GR,	},
++	{ /* sentinel */ },
++};
++
+ static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
+ 	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
+ 	{ BTN_EAST,	0, NS2_BTNR_B,		},
+@@ -3159,6 +3222,27 @@ static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
+ 	{ /* sentinel */ },
+ };
+ 
++static const struct switch2_ctlr_button_mapping ns2_procon_unified_mappings[] = {
++	{ BTN_SOUTH,	0, NS2_BTN_U1_A,	},
++	{ BTN_EAST,	0, NS2_BTN_U1_B,	},
++	{ BTN_NORTH,	0, NS2_BTN_U1_X,	},
++	{ BTN_WEST,	0, NS2_BTN_U1_Y,	},
++	{ BTN_TL,	2, NS2_BTN_U3_L,	},
++	{ BTN_TR,	0, NS2_BTN_U1_R,	},
++	{ BTN_TL2,	2, NS2_BTN_U3_ZL,	},
++	{ BTN_TR2,	0, NS2_BTN_U1_ZR,	},
++	{ BTN_SELECT,	1, NS2_BTN_U2_MINUS,	},
++	{ BTN_START,	1, NS2_BTN_U2_PLUS,	},
++	{ BTN_THUMBL,	1, NS2_BTN_U2_LS,	},
++	{ BTN_THUMBR,	1, NS2_BTN_U2_RS,	},
++	{ BTN_MODE,	1, NS2_BTN_U2_HOME	},
++	{ KEY_RECORD,	1, NS2_BTN_U2_CAPTURE	},
++	{ BTN_GRIPR,	3, NS2_BTN_U4_GR	},
++	{ BTN_GRIPL,	3, NS2_BTN_U4_GL	},
++	{ BTN_C,	1, NS2_BTN_U2_C		},
++	{ /* sentinel */ },
++};
++
+ static const struct switch2_ctlr_button_mapping ns2_gccon_mappings[] = {
+ 	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
+ 	{ BTN_EAST,	0, NS2_BTNR_B,		},
+@@ -3176,6 +3260,23 @@ static const struct switch2_ctlr_button_mapping ns2_gccon_mappings[] = {
+ 	{ /* sentinel */ },
+ };
+ 
++static const struct switch2_ctlr_button_mapping ns2_gccon_unified_mappings[] = {
++	{ BTN_SOUTH,	0, NS2_BTN_U1_A,	},
++	{ BTN_EAST,	0, NS2_BTN_U1_B,	},
++	{ BTN_NORTH,	0, NS2_BTN_U1_X,	},
++	{ BTN_WEST,	0, NS2_BTN_U1_Y,	},
++	{ BTN_TL2,	2, NS2_BTN_U3_L,	},
++	{ BTN_TR2,	0, NS2_BTN_U1_R,	},
++	{ BTN_TL,	2, NS2_BTN_U3_ZL	},
++	{ BTN_TR,	0, NS2_BTN_U1_ZR	},
++	{ BTN_SELECT,	1, NS2_BTN_U2_MINUS,	},
++	{ BTN_START,	1, NS2_BTN_U2_PLUS,	},
++	{ BTN_MODE,	1, NS2_BTN_U2_HOME	},
++	{ KEY_RECORD,	1, NS2_BTN_U2_CAPTURE	},
++	{ BTN_C,	1, NS2_BTN_U2_C		},
++	{ /* sentinel */ },
++};
++
+ static const uint8_t switch2_init_cmd_data[] = {
+ 	/*
+ 	 * The last 6 bytes of this packet are the MAC address of
+@@ -3802,11 +3903,51 @@ static int switch2_event(struct hid_device *hdev, struct hid_report *report, uin
+ 
+ 	switch (report->id) {
+ 	case NS2_REPORT_UNIFIED:
+-		/*
+-		 * TODO
+-		 * This won't be sent unless the report type gets changed via command
+-		 * 03-0A, but we should support it at some point regardless.
+-		 */
++		if (size < 0x3f)
++			return -EINVAL;
++
++		switch (ns2->ctlr_type) {
++		case NS2_CTLR_TYPE_JCL:
++			switch2_report_stick(input, &ns2->stick_calib[0],
++				ABS_X, false, ABS_Y, true, &raw_data[11]);
++			switch2_report_buttons(input, &raw_data[5],
++				ns2_left_joycon_button_unified_mappings);
++			break;
++		case NS2_CTLR_TYPE_JCR:
++			switch2_report_stick(input, &ns2->stick_calib[0],
++				ABS_X, false, ABS_Y, true, &raw_data[14]);
++			switch2_report_buttons(input, &raw_data[5],
++				ns2_right_joycon_button_unified_mappings);
++			break;
++		case NS2_CTLR_TYPE_GC:
++			input_report_abs(input, ABS_HAT0X,
++				!!(raw_data[7] & NS2_BTN_U3_RIGHT) -
++				!!(raw_data[7] & NS2_BTN_U3_LEFT));
++			input_report_abs(input, ABS_HAT0Y,
++				!!(raw_data[7] & NS2_BTN_U3_DOWN) -
++				!!(raw_data[7] & NS2_BTN_U3_UP));
++			switch2_report_buttons(input, &raw_data[5], ns2_gccon_unified_mappings);
++			switch2_report_stick(input, &ns2->stick_calib[0],
++				ABS_X, false, ABS_Y, true, &raw_data[11]);
++			switch2_report_stick(input, &ns2->stick_calib[1],
++				ABS_RX, false, ABS_RY, true, &raw_data[14]);
++			switch2_report_trigger(input, ns2->lt_zero, ABS_Z, raw_data[0x3d]);
++			switch2_report_trigger(input, ns2->rt_zero, ABS_RZ, raw_data[0x3e]);
++			break;
++		case NS2_CTLR_TYPE_PRO:
++			input_report_abs(input, ABS_HAT0X,
++				!!(raw_data[7] & NS2_BTN_U3_RIGHT) -
++				!!(raw_data[7] & NS2_BTN_U3_LEFT));
++			input_report_abs(input, ABS_HAT0Y,
++				!!(raw_data[7] & NS2_BTN_U3_DOWN) -
++				!!(raw_data[7] & NS2_BTN_U3_UP));
++			switch2_report_buttons(input, &raw_data[5], ns2_procon_unified_mappings);
++			switch2_report_stick(input, &ns2->stick_calib[0],
++				ABS_X, false, ABS_Y, true, &raw_data[11]);
++			switch2_report_stick(input, &ns2->stick_calib[1],
++				ABS_RX, false, ABS_RY, true, &raw_data[14]);
++			break;
++		}
+ 		break;
+ 	case NS2_REPORT_JCL:
+ 		switch2_report_stick(input, &ns2->stick_calib[0], ABS_X, false,
+-- 
+2.55.0
+
