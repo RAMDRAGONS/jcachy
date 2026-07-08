@@ -1,3 +1,25 @@
+From a522afc76f29ee8ad5f737595bc2ee690eda9c97 Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Wed, 8 Jul 2026 01:18:52 -0400
+Subject: [PATCH] Apply 0001-6.18.3-nap-v0.5.0.patch
+
+---
+ drivers/cpuidle/Kconfig                     |  17 +
+ drivers/cpuidle/governors/Makefile          |   1 +
+ drivers/cpuidle/governors/nap/Makefile      |  30 +
+ drivers/cpuidle/governors/nap/nap.c         | 618 ++++++++++++++++++++
+ drivers/cpuidle/governors/nap/nap.h         | 291 +++++++++
+ drivers/cpuidle/governors/nap/nap_fpu.c     | 528 +++++++++++++++++
+ drivers/cpuidle/governors/nap/nap_nn_avx2.c | 135 +++++
+ drivers/cpuidle/governors/nap/nap_nn_sse2.c | 136 +++++
+ 8 files changed, 1756 insertions(+)
+ create mode 100644 drivers/cpuidle/governors/nap/Makefile
+ create mode 100644 drivers/cpuidle/governors/nap/nap.c
+ create mode 100644 drivers/cpuidle/governors/nap/nap.h
+ create mode 100644 drivers/cpuidle/governors/nap/nap_fpu.c
+ create mode 100644 drivers/cpuidle/governors/nap/nap_nn_avx2.c
+ create mode 100644 drivers/cpuidle/governors/nap/nap_nn_sse2.c
+
 diff --git a/drivers/cpuidle/Kconfig b/drivers/cpuidle/Kconfig
 index d6d8386d3f..491b7809fa 100644
 --- a/drivers/cpuidle/Kconfig
@@ -1809,3 +1831,6 @@ index 0000000000..0f2a6f131f
 +		}
 +	}
 +}
+-- 
+2.55.0
+

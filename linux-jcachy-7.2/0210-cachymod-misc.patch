@@ -1,5 +1,27 @@
+From 2b8c9aa208602ecfc2b28116ab014ae96a347785 Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Wed, 8 Jul 2026 01:17:43 -0400
+Subject: [PATCH] Apply 0210-cachymod-misc.patch
+
+---
+ Makefile                           |  4 ++--
+ arch/x86/include/asm/tsc.h         |  3 +++
+ block/blk-wbt.c                    |  7 +-----
+ block/mq-deadline.c                |  4 ++--
+ drivers/acpi/processor_idle.c      |  7 ++++--
+ drivers/cpufreq/cpufreq_ondemand.c |  6 ++---
+ drivers/md/dm-crypt.c              |  3 +++
+ drivers/usb/core/quirks.c          |  3 +++
+ fs/dcache.c                        |  2 +-
+ include/linux/blkdev.h             |  3 ++-
+ kernel/sched/fair.c                | 35 ++++++++++++++++++++++--------
+ lib/Kconfig.debug                  |  4 ++--
+ net/ipv4/tcp_input.c               | 16 +++++++++++++-
+ scripts/Makefile.lib               |  6 ++---
+ 14 files changed, 71 insertions(+), 32 deletions(-)
+
 diff --git a/Makefile b/Makefile
-index 821fda2952..d94a47e36f 100644
+index bc91e4b870..c4c42cacda 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -469,7 +469,7 @@ KERNELDOC       = $(srctree)/tools/docs/kernel-doc
@@ -165,67 +187,38 @@ index 9213a5716f..8522438206 100644
  
  void blk_queue_flag_set(unsigned int flag, struct request_queue *q);
  void blk_queue_flag_clear(unsigned int flag, struct request_queue *q);
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index e7dc2925e3..d34554e387 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -3738,21 +3738,6 @@ static inline void ttwu_do_wakeup(struct task_struct *p)
- 	trace_sched_wakeup(p);
- }
- 
--void update_rq_avg_idle(struct rq *rq)
--{
--	if (!rq->idle_stamp)
--		return;
--
--	u64 delta = rq_clock(rq) - rq->idle_stamp;
--	u64 max = 2*rq->max_idle_balance_cost;
--
--	update_avg(&rq->avg_idle, delta);
--
--	if (rq->avg_idle > max)
--		rq->avg_idle = max;
--	rq->idle_stamp = 0;
--}
--
- #ifdef CONFIG_SCHED_PROXY_EXEC
- static void zap_balance_callbacks(struct rq *rq);
- 
-@@ -3846,6 +3831,18 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
- 		p->sched_class->task_woken(rq, p);
- 		rq_repin_lock(rq, rf);
- 	}
-+
-+	if (rq->idle_stamp) {
-+		u64 delta = rq_clock(rq) - rq->idle_stamp;
-+		u64 max = 2*rq->max_idle_balance_cost;
-+
-+		update_avg(&rq->avg_idle, delta);
-+
-+		if (rq->avg_idle > max)
-+			rq->avg_idle = max;
-+
-+		rq->idle_stamp = 0;
-+	}
- }
- 
- /*
 diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
-index 8b9298bbc4..ae41143aa4 100644
+index cfd849638e..2816afaf9b 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -13622,7 +13622,9 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
- 			 * if the curr task on busiest CPU can't be
- 			 * moved to this_cpu:
+@@ -13542,12 +13542,21 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
+ 			 * ->active_balance_work.  Once set, it's cleared
+ 			 * only after active load balance is finished.
  			 */
--			if (!cpumask_test_cpu(this_cpu, busiest->curr->cpus_ptr)) {
-+			if (!cpumask_test_cpu(this_cpu, busiest->curr->cpus_ptr) ||
-+				(busiest->curr->sched_class == &fair_sched_class &&
-+				!busiest->curr->on_rq)) {
- 				raw_spin_rq_unlock_irqrestore(busiest, flags);
- 				goto out_one_pinned;
- 			}
-@@ -13654,10 +13656,8 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
+-			if (!busiest->active_balance) {
+-				busiest->active_balance = 1;
+-				busiest->push_cpu = this_cpu;
+-				active_balance = 1;
+-			}
++			if (busiest->active_balance)
++				goto no_active_balance;
+ 
++			/*
++			 * @busiest dropped its rq_lock in the middle of
++			 * scheduling out its ->curr task (->on_rq := 0), no
++			 * need to forcefully punt it away with active balance.
++			 */
++			if (!busiest->curr->on_rq)
++				goto no_active_balance;
++
++			busiest->active_balance = 1;
++			busiest->push_cpu = this_cpu;
++			active_balance = 1;
++no_active_balance:
+ 			preempt_disable();
+ 			raw_spin_rq_unlock_irqrestore(busiest, flags);
+ 			if (active_balance) {
+@@ -13561,10 +13570,8 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
  		sd->nr_balance_failed = 0;
  	}
  
@@ -238,7 +231,7 @@ index 8b9298bbc4..ae41143aa4 100644
  
  	goto out;
  
-@@ -15156,6 +15156,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+@@ -15050,6 +15057,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
  
@@ -254,7 +247,7 @@ index 8b9298bbc4..ae41143aa4 100644
  static void switched_to_fair(struct rq *rq, struct task_struct *p)
  {
  	WARN_ON_ONCE(p->se.sched_delayed);
-@@ -15536,6 +15545,7 @@ DEFINE_SCHED_CLASS(fair) = {
+@@ -15429,6 +15445,7 @@ DEFINE_SCHED_CLASS(fair) = {
  	.prio_changed		= prio_changed_fair,
  	.switching_from		= switching_from_fair,
  	.switched_from		= switched_from_fair,
@@ -262,30 +255,6 @@ index 8b9298bbc4..ae41143aa4 100644
  	.switched_to		= switched_to_fair,
  
  	.get_rr_interval	= get_rr_interval_fair,
-diff --git a/kernel/sched/idle.c b/kernel/sched/idle.c
-index 052435f4d3..b1f3735679 100644
---- a/kernel/sched/idle.c
-+++ b/kernel/sched/idle.c
-@@ -484,7 +484,6 @@ static void put_prev_task_idle(struct rq *rq, struct task_struct *prev, struct t
- {
- 	update_curr_idle(rq);
- 	scx_update_idle(rq, false, true);
--	update_rq_avg_idle(rq);
- }
- 
- static void set_next_task_idle(struct rq *rq, struct task_struct *next, bool first)
-diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
-index 37ea2f2970..37df26fd36 100644
---- a/kernel/sched/sched.h
-+++ b/kernel/sched/sched.h
-@@ -1753,7 +1753,6 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
- 
- #endif /* !CONFIG_FAIR_GROUP_SCHED */
- 
--extern void update_rq_avg_idle(struct rq *rq);
- extern void update_rq_clock(struct rq *rq);
- 
- /*
 diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
 index 5cd813dd27..68cd808f7b 100644
 --- a/lib/Kconfig.debug
@@ -360,3 +329,6 @@ index 0a4fdd8bd9..64f147aa2c 100644
  
  # ASM offsets
  # ---------------------------------------------------------------------------
+-- 
+2.55.0
+

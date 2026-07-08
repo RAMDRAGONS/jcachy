@@ -1,5 +1,16 @@
+From c2fd17df4dec1d4e820c8c168d21390157ad3812 Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Wed, 8 Jul 2026 01:17:28 -0400
+Subject: [PATCH] Apply flags-clang.patch
+
+---
+ Makefile                 | 11 +++++++++++
+ kernel/time/hrtimer.c    |  2 +-
+ net/core/net_namespace.c |  2 +-
+ 3 files changed, 13 insertions(+), 2 deletions(-)
+
 diff --git a/Makefile b/Makefile
-index 804dea13c4..821fda2952 100644
+index 275c8e4b3f..bc91e4b870 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -956,6 +956,17 @@ KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
@@ -46,3 +57,6 @@ index d9dafe24f5..4a88ffcdb8 100644
  {
  	/* Must be called with pernet_ops_rwsem held */
  	const struct pernet_operations *ops;
+-- 
+2.55.0
+

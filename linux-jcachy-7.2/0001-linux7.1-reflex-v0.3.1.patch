@@ -1,3 +1,23 @@
+From 3ada7b9f887ed9af0b9120a36d1ba655a47df249 Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Wed, 8 Jul 2026 01:20:50 -0400
+Subject: [PATCH] sched: reflex v0.3.1
+
+Signed-off-by: CachyOS <admin@cachyos.org>
+---
+ arch/x86/kernel/cpu/aperfmperf.c |    1 +
+ drivers/cpufreq/Kconfig          |   24 +
+ drivers/cpufreq/Makefile         |    1 +
+ drivers/cpufreq/cpufreq.c        |    3 +
+ drivers/cpufreq/cpufreq_reflex.c | 1141 ++++++++++++++++++++++++++++++
+ include/linux/sched/cpufreq.h    |   10 +
+ kernel/kthread.c                 |    1 +
+ kernel/sched/cpufreq.c           |    1 +
+ kernel/sched/cpufreq_schedutil.c |   76 ++
+ kernel/time/tick-sched.c         |    1 +
+ 10 files changed, 1259 insertions(+)
+ create mode 100644 drivers/cpufreq/cpufreq_reflex.c
+
 diff --git a/arch/x86/kernel/cpu/aperfmperf.c b/arch/x86/kernel/cpu/aperfmperf.c
 index 7ffc78d5eb..4271bcc71f 100644
 --- a/arch/x86/kernel/cpu/aperfmperf.c
@@ -1371,3 +1391,6 @@ index 98a9cae915..375a034f2a 100644
  
  void tick_nohz_idle_restart_tick(void)
  {
+-- 
+2.55.0
+
