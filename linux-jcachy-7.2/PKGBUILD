@@ -138,7 +138,7 @@ _pkgsuffix=jcachy
 _major=7.2
 #_minor=2
 _tagrel=3
-_rcver="rc2"
+_rcver="rc3"
 pkgver=${_major}.${_rcver}
 #pkgver=${_major}.${_minor}
 
@@ -176,10 +176,9 @@ source=(
 
     # JCachy
     "0300-switch-2-controller-driver.patch"
-    "0001-7.2-rc1-poc-selector-v2.6.2.patch"
     "0001-6.18.3-nap-v0.5.0.patch"
     "0001-7.0-rc5-cambyses-v0.5.3.patch"
-    "0001-linux7.2-rc1-lru_marie-0.7.1.patch"
+    "0001-linux7.2-rc1-lru_marie-0.7.7.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
 
     # The revert is applied only if BORE patch is selected
