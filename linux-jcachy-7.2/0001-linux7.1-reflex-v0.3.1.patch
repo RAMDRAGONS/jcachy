@@ -1,9 +1,8 @@
-From 3ada7b9f887ed9af0b9120a36d1ba655a47df249 Mon Sep 17 00:00:00 2001
+From 0c4bcf6b770684b95b6b4dd80e865a6b8916462d Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 8 Jul 2026 01:20:50 -0400
+Date: Mon, 3 Aug 2026 22:55:32 -0400
 Subject: [PATCH] sched: reflex v0.3.1
 
-Signed-off-by: CachyOS <admin@cachyos.org>
 ---
  arch/x86/kernel/cpu/aperfmperf.c |    1 +
  drivers/cpufreq/Kconfig          |   24 +
@@ -78,7 +77,7 @@ index 6c7a39b7f8..8e461d1102 100644
  obj-$(CONFIG_CPUFREQ_DT)		+= cpufreq-dt.o
  obj-$(CONFIG_CPUFREQ_DT_RUST)		+= rcpufreq_dt.o
 diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
-index 507224c9ec..776a70e48d 100644
+index b898b65440..29682b98ee 100644
 --- a/drivers/cpufreq/cpufreq.c
 +++ b/drivers/cpufreq/cpufreq.c
 @@ -2045,6 +2045,7 @@ bool cpufreq_driver_test_flags(u16 flags)
@@ -1296,10 +1295,10 @@ index 742fb9e62e..5abbe2f17b 100644
  }
 +EXPORT_SYMBOL_GPL(cpufreq_this_cpu_can_update);
 diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
-index a4e689eefd..ac5455e863 100644
+index dff4ee0469..9caf75c71d 100644
 --- a/kernel/sched/cpufreq_schedutil.c
 +++ b/kernel/sched/cpufreq_schedutil.c
-@@ -937,3 +937,79 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
+@@ -948,3 +948,79 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
  }
  
  cpufreq_governor_init(schedutil_gov);

@@ -1,6 +1,6 @@
-From 0cfe618127353aa762c348fb94595343185de9dc Mon Sep 17 00:00:00 2001
+From 1ce30477d01650a8be9d924e6bdc2c7573f2fea2 Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 8 Jul 2026 01:17:36 -0400
+Date: Mon, 3 Aug 2026 22:54:14 -0400
 Subject: [PATCH] Apply 0100-kconfig-add-800Hz.patch
 
 ---
@@ -8,7 +8,7 @@ Subject: [PATCH] Apply 0100-kconfig-add-800Hz.patch
  1 file changed, 18 insertions(+)
 
 diff --git a/kernel/Kconfig.hz b/kernel/Kconfig.hz
-index e1359db556..40bb0724fd 100644
+index 31053e6197..8780fafdd8 100644
 --- a/kernel/Kconfig.hz
 +++ b/kernel/Kconfig.hz
 @@ -54,6 +54,14 @@ choice

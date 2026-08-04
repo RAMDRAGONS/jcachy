@@ -1,6 +1,6 @@
-From cd2e70ce7b42db71586e98f2083d6e62cc01cc38 Mon Sep 17 00:00:00 2001
+From 0f5cb1238bae95571aac712bfeaafeb1b94ad20c Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 8 Jul 2026 01:17:35 -0400
+Date: Mon, 3 Aug 2026 22:53:46 -0400
 Subject: [PATCH] rt-i915
 
 ---
@@ -229,7 +229,7 @@ index c0fd349a46..9dd9665128 100644
  
  	/*
 diff --git a/drivers/gpu/drm/i915/gt/intel_execlists_submission.c b/drivers/gpu/drm/i915/gt/intel_execlists_submission.c
-index 1359fc9cb8..e11db81dca 100644
+index e693b0c9d2..841f719326 100644
 --- a/drivers/gpu/drm/i915/gt/intel_execlists_submission.c
 +++ b/drivers/gpu/drm/i915/gt/intel_execlists_submission.c
 @@ -1300,7 +1300,7 @@ static void execlists_dequeue(struct intel_engine_cs *engine)

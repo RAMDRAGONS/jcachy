@@ -1,6 +1,6 @@
-From 2b8c9aa208602ecfc2b28116ab014ae96a347785 Mon Sep 17 00:00:00 2001
+From e5e243caf2accebe08c12197520900eff88edbf3 Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 8 Jul 2026 01:17:43 -0400
+Date: Mon, 3 Aug 2026 22:54:14 -0400
 Subject: [PATCH] Apply 0210-cachymod-misc.patch
 
 ---
@@ -21,7 +21,7 @@ Subject: [PATCH] Apply 0210-cachymod-misc.patch
  14 files changed, 71 insertions(+), 32 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index bc91e4b870..c4c42cacda 100644
+index 71d49de9d9..40d204b6b5 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -469,7 +469,7 @@ KERNELDOC       = $(srctree)/tools/docs/kernel-doc
@@ -33,7 +33,7 @@ index bc91e4b870..c4c42cacda 100644
  KBUILD_USERCFLAGS  := $(KBUILD_USERHOSTCFLAGS) $(USERCFLAGS)
  KBUILD_USERLDFLAGS := $(USERLDFLAGS)
  
-@@ -807,7 +807,7 @@ ifdef need-config
+@@ -810,7 +810,7 @@ ifdef need-config
  include $(objtree)/include/config/auto.conf
  endif
  
@@ -43,7 +43,7 @@ index bc91e4b870..c4c42cacda 100644
  CC_FLAGS_DIALECT += $(CONFIG_CC_MS_EXTENSIONS)
  # Clang enables warnings about GNU and Microsoft extensions by default, disable
 diff --git a/arch/x86/include/asm/tsc.h b/arch/x86/include/asm/tsc.h
-index 4d2d2f21ff..633be8ce80 100644
+index 77fa6e627a..36d940a217 100644
 --- a/arch/x86/include/asm/tsc.h
 +++ b/arch/x86/include/asm/tsc.h
 @@ -78,6 +78,9 @@ static inline cycles_t get_cycles(void)
@@ -57,7 +57,7 @@ index 4d2d2f21ff..633be8ce80 100644
  }
  #define get_cycles get_cycles
 diff --git a/block/blk-wbt.c b/block/blk-wbt.c
-index dcc2438ca1..267466a0bc 100644
+index 953d400fd0..90064c2f91 100644
 --- a/block/blk-wbt.c
 +++ b/block/blk-wbt.c
 @@ -798,12 +798,7 @@ void wbt_init_enable_default(struct gendisk *disk)
@@ -147,10 +147,10 @@ index 608b617fb8..787f881be9 100644
  	if (ret < 0)
  		goto bad;
 diff --git a/drivers/usb/core/quirks.c b/drivers/usb/core/quirks.c
-index 87810eff97..f373fd7cd9 100644
+index f5a60ccf21..f23212f38b 100644
 --- a/drivers/usb/core/quirks.c
 +++ b/drivers/usb/core/quirks.c
-@@ -273,6 +273,9 @@ static const struct usb_device_id usb_quirk_list[] = {
+@@ -277,6 +277,9 @@ static const struct usb_device_id usb_quirk_list[] = {
  	/* Logitech Harmony 700-series */
  	{ USB_DEVICE(0x046d, 0xc122), .driver_info = USB_QUIRK_DELAY_INIT },
  
@@ -188,10 +188,10 @@ index 9213a5716f..8522438206 100644
  void blk_queue_flag_set(unsigned int flag, struct request_queue *q);
  void blk_queue_flag_clear(unsigned int flag, struct request_queue *q);
 diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
-index cfd849638e..2816afaf9b 100644
+index 46cb5375c9..8c5b2cd324 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -13542,12 +13542,21 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
+@@ -13724,12 +13724,21 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
  			 * ->active_balance_work.  Once set, it's cleared
  			 * only after active load balance is finished.
  			 */
@@ -218,7 +218,7 @@ index cfd849638e..2816afaf9b 100644
  			preempt_disable();
  			raw_spin_rq_unlock_irqrestore(busiest, flags);
  			if (active_balance) {
-@@ -13561,10 +13570,8 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
+@@ -13743,10 +13752,8 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
  		sd->nr_balance_failed = 0;
  	}
  
@@ -231,7 +231,7 @@ index cfd849638e..2816afaf9b 100644
  
  	goto out;
  
-@@ -15050,6 +15057,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+@@ -15232,6 +15239,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
  
@@ -247,7 +247,7 @@ index cfd849638e..2816afaf9b 100644
  static void switched_to_fair(struct rq *rq, struct task_struct *p)
  {
  	WARN_ON_ONCE(p->se.sched_delayed);
-@@ -15429,6 +15445,7 @@ DEFINE_SCHED_CLASS(fair) = {
+@@ -15614,6 +15630,7 @@ DEFINE_SCHED_CLASS(fair) = {
  	.prio_changed		= prio_changed_fair,
  	.switching_from		= switching_from_fair,
  	.switched_from		= switched_from_fair,
@@ -278,10 +278,10 @@ index 5cd813dd27..68cd808f7b 100644
  	  Say Y here to make BUG() panics output the file name and line number
  	  of the BUG call as well as the EIP and oops trace.  This aids
 diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
-index 38fbf77e2e..96a50b73b1 100644
+index 158cb0ceed..76aaee4d01 100644
 --- a/net/ipv4/tcp_input.c
 +++ b/net/ipv4/tcp_input.c
-@@ -5352,11 +5352,25 @@ static void tcp_ofo_queue(struct sock *sk)
+@@ -5382,11 +5382,25 @@ static void tcp_ofo_queue(struct sock *sk)
  static bool tcp_prune_ofo_queue(struct sock *sk, const struct sk_buff *in_skb);
  static int tcp_prune_queue(struct sock *sk, const struct sk_buff *in_skb);
  

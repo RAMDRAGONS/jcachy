@@ -1,6 +1,6 @@
-From c2fd17df4dec1d4e820c8c168d21390157ad3812 Mon Sep 17 00:00:00 2001
+From d6e8b464eb6bdc40b7188c5f887e7c2765494f95 Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 8 Jul 2026 01:17:28 -0400
+Date: Mon, 3 Aug 2026 22:53:46 -0400
 Subject: [PATCH] Apply flags-clang.patch
 
 ---
@@ -10,10 +10,10 @@ Subject: [PATCH] Apply flags-clang.patch
  3 files changed, 13 insertions(+), 2 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index 275c8e4b3f..bc91e4b870 100644
+index 0fd684a7b3..71d49de9d9 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -956,6 +956,17 @@ KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
+@@ -959,6 +959,17 @@ KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
  KBUILD_CFLAGS	+= $(call cc-option,-fno-allow-store-data-races)
  endif
  

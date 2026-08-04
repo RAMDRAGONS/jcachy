@@ -137,13 +137,13 @@ fi
 _pkgsuffix=jcachy
 _major=7.2
 #_minor=2
-_tagrel=1
-_rcver="rc5"
+_tagrel=2
+_rcver="rc6"
 pkgver=${_major}.${_rcver}
 #pkgver=${_major}.${_minor}
 
 pkgdesc='JCachy Linux Kernel with other patches and improvements'
-pkgrel=1
+pkgrel=2
 #_srcname=cachyos-${_major}.${_minor}-${_tagrel}
 _srcname=cachyos-${_major}-${_rcver}-${_tagrel}
 _kernver="$pkgver-$pkgrel"
@@ -167,12 +167,15 @@ source=(
 
     # CachyOS
     "0001-rt-i915.patch"
+    "0001-bore-cachy.patch"
 
     # CachyMod
     "0100-kconfig-add-800Hz.patch"
     "0200-clearlinux-extras.patch"
     "0210-cachymod-misc.patch"
-    "0260-fair-update-cachy-mods.patch"
+
+    # Only apply when not using BORE scheduler
+    # "0260-fair-update-cachy-mods.patch"
 
     # JCachy
     "0300-switch-2-controller-driver.patch"
@@ -180,11 +183,8 @@ source=(
     "0001-linux7.1-rc1-zram-ir-1.2.patch"
     "0001-6.18.3-nap-v0.5.0.patch"
     "0001-7.2.0-rc4-cambyses-v0.6.0.patch"
-    "0001-linux7.2-rc1-lru_marie-0.9.1.patch"
+    "0001-linux7.2-rc1-lru_marie-0.9.2.patch"
     "0001-linux7.1-reflex-v0.3.1.patch"
-
-    # The revert is applied only if BORE patch is selected
-    "0360-fair-revert-cachy-mods.patch"
 )
 
 # LLVM makedepends

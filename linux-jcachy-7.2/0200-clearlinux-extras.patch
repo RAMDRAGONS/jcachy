@@ -1,6 +1,6 @@
-From 1e36e62b9407ec825edad493e44b452c50d912c3 Mon Sep 17 00:00:00 2001
+From 8c8b292a123021a0678340b56f50f607d9e8ef23 Mon Sep 17 00:00:00 2001
 From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Wed, 8 Jul 2026 01:17:38 -0400
+Date: Mon, 3 Aug 2026 22:54:14 -0400
 Subject: [PATCH] Apply 0200-clearlinux-extras.patch
 
 ---
@@ -165,10 +165,10 @@ index 243a769fdd..3d4bce75bb 100644
 +	}
 +}
 diff --git a/arch/x86/kernel/tsc.c b/arch/x86/kernel/tsc.c
-index ce10ae4b29..0209a72fd3 100644
+index 1728df73e2..d6ae47e1f2 100644
 --- a/arch/x86/kernel/tsc.c
 +++ b/arch/x86/kernel/tsc.c
-@@ -1588,6 +1588,9 @@ unsigned long calibrate_delay_is_known(void)
+@@ -1591,6 +1591,9 @@ unsigned long calibrate_delay_is_known(void)
  	if (!constant_tsc || !mask)
  		return 0;
  
@@ -235,7 +235,7 @@ index 6779293724..f83fa2157b 100644
  		value1 = clocksource_acpi_pm.read(&clocksource_acpi_pm);
  		for (i = 0; i < ACPI_PM_READ_CHECKS; i++) {
 diff --git a/drivers/cpufreq/intel_pstate.c b/drivers/cpufreq/intel_pstate.c
-index 58ea30938c..c42a6d4fc1 100644
+index 631ed71313..734733d00e 100644
 --- a/drivers/cpufreq/intel_pstate.c
 +++ b/drivers/cpufreq/intel_pstate.c
 @@ -382,6 +382,13 @@ static void intel_pstate_set_itmt_prio(int cpu)
@@ -366,10 +366,10 @@ index 3bcc03f3aa..43f794329e 100644
  #define BOND_DEFAULT_TX_QUEUES 16   /* Default number of tx queues per device */
  
 diff --git a/init/Kconfig b/init/Kconfig
-index 39e153f9a0..ce638450c4 100644
+index f17e61fb60..4793d59e94 100644
 --- a/init/Kconfig
 +++ b/init/Kconfig
-@@ -1721,7 +1721,7 @@ menuconfig EXPERT
+@@ -1754,7 +1754,7 @@ menuconfig EXPERT
  	  Only use this if you really know what you are doing.
  
  config UID16
