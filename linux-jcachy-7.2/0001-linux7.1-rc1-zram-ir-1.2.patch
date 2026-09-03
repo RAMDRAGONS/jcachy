@@ -8,7 +8,7 @@ Subject: [PATCH] Apply 0001-linux7.1-rc1-zram-ir-1.2.patch
  1 file changed, 72 insertions(+), 18 deletions(-)
 
 diff --git a/drivers/block/zram/zram_drv.c b/drivers/block/zram/zram_drv.c
-index ace65c5860..29772a8dab 100644
+index a9b3bb1d3b..11fa01a2fd 100644
 --- a/drivers/block/zram/zram_drv.c
 +++ b/drivers/block/zram/zram_drv.c
 @@ -56,6 +56,23 @@ static size_t huge_class_size;
@@ -32,19 +32,19 @@ index ace65c5860..29772a8dab 100644
 +static struct ctl_table_header *zram_sysctl_table_header;
 +#endif //CONFIG_ZRAM_MULTI_COMP
 +
- static void slot_free(struct zram *zram, u32 index);
- #define slot_dep_map(zram, index) (&(zram)->table[(index)].dep_map)
+ static void slot_free(struct zram *zram, unsigned long index);
  
-@@ -2227,7 +2244,7 @@ static int write_same_filled_page(struct zram *zram, unsigned long fill,
+ /*
+@@ -2242,7 +2259,7 @@ static int write_same_filled_page(struct zram *zram, unsigned long fill,
  }
  
  static int write_incompressible_page(struct zram *zram, struct page *page,
--				     u32 index)
-+				     u32 index, u8 prio)
+-				     unsigned long index)
++				     unsigned long index, u8 prio)
  {
  	unsigned long handle;
  	void *src;
-@@ -2257,6 +2274,7 @@ static int write_incompressible_page(struct zram *zram, struct page *page,
+@@ -2272,6 +2289,7 @@ static int write_incompressible_page(struct zram *zram, struct page *page,
  	set_slot_flag(zram, index, ZRAM_HUGE);
  	set_slot_handle(zram, index, handle);
  	set_slot_size(zram, index, PAGE_SIZE);
@@ -52,7 +52,7 @@ index ace65c5860..29772a8dab 100644
  	slot_unlock(zram, index);
  
  	atomic64_add(PAGE_SIZE, &zram->stats.compr_data_size);
-@@ -2273,9 +2291,13 @@ static int zram_write_page(struct zram *zram, struct page *page, u32 index)
+@@ -2289,9 +2307,13 @@ static int zram_write_page(struct zram *zram, struct page *page,
  	unsigned long handle;
  	unsigned int comp_len;
  	void *mem;
@@ -67,7 +67,7 @@ index ace65c5860..29772a8dab 100644
  
  	mem = kmap_local_page(page);
  	same_filled = page_same_filled(mem, &element);
-@@ -2283,50 +2305,69 @@ static int zram_write_page(struct zram *zram, struct page *page, u32 index)
+@@ -2299,50 +2321,69 @@ static int zram_write_page(struct zram *zram, struct page *page,
  	if (same_filled)
  		return write_same_filled_page(zram, element, index);
  
@@ -153,7 +153,7 @@ index ace65c5860..29772a8dab 100644
  	return ret;
  }
  
-@@ -3278,6 +3319,15 @@ static int __init zram_init(void)
+@@ -3300,6 +3341,15 @@ static int __init zram_init(void)
  		num_devices--;
  	}
  
@@ -169,7 +169,7 @@ index ace65c5860..29772a8dab 100644
  	return 0;
  
  out_error:
-@@ -3287,6 +3337,10 @@ static int __init zram_init(void)
+@@ -3309,6 +3359,10 @@ static int __init zram_init(void)
  
  static void __exit zram_exit(void)
  {

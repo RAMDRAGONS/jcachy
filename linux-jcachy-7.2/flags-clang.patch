@@ -10,7 +10,7 @@ Subject: [PATCH] Apply flags-clang.patch
  3 files changed, 13 insertions(+), 2 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index 0fd684a7b3..71d49de9d9 100644
+index 60b75892fb..946e07b2d1 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -959,6 +959,17 @@ KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
@@ -32,10 +32,10 @@ index 0fd684a7b3..71d49de9d9 100644
  # Disable optimizations that make assembler listings hard to read.
  # reorder blocks reorders the control in the function
 diff --git a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
-index 313dcea127..e4e59431c6 100644
+index 530d61257b..be457b72de 100644
 --- a/kernel/time/hrtimer.c
 +++ b/kernel/time/hrtimer.c
-@@ -2387,7 +2387,7 @@ int nanosleep_copyout(struct restart_block *restart, struct timespec64 *ts)
+@@ -2417,7 +2417,7 @@ int nanosleep_copyout(struct restart_block *restart, struct timespec64 *ts)
  	return -ERESTART_RESTARTBLOCK;
  }
  
@@ -45,10 +45,10 @@ index 313dcea127..e4e59431c6 100644
  	struct restart_block *restart;
  
 diff --git a/net/core/net_namespace.c b/net/core/net_namespace.c
-index d9dafe24f5..4a88ffcdb8 100644
+index da5f881fbd..5eb2d5c95a 100644
 --- a/net/core/net_namespace.c
 +++ b/net/core/net_namespace.c
-@@ -433,7 +433,7 @@ static __net_init int preinit_net(struct net *net, struct user_namespace *user_n
+@@ -430,7 +430,7 @@ static __net_init void preinit_net(struct net *net, struct user_namespace *user_
  /*
   * setup_net runs the initializers for the network namespace object.
   */

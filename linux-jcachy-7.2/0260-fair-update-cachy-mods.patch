@@ -9,10 +9,10 @@ Subject: [PATCH] Apply 0260-fair-update-cachy-mods.patch
  2 files changed, 4 insertions(+), 8 deletions(-)
 
 diff --git a/init/init_task.c b/init/init_task.c
-index b67ef6040a..cf04021d41 100644
+index adb207cd98..0cce64368e 100644
 --- a/init/init_task.c
 +++ b/init/init_task.c
-@@ -180,7 +180,7 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
+@@ -182,7 +182,7 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
  	INIT_CPU_TIMERS(init_task)
  	.pi_lock	= __RAW_SPIN_LOCK_UNLOCKED(init_task.pi_lock),
  	.blocked_lock	= __RAW_SPIN_LOCK_UNLOCKED(init_task.blocked_lock),
@@ -22,10 +22,10 @@ index b67ef6040a..cf04021d41 100644
  	.thread_node	= LIST_HEAD_INIT(init_signals.thread_head),
  #ifdef CONFIG_AUDIT
 diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
-index 2816afaf9b..10979e07e5 100644
+index 7672e7835e..29a9b30a41 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -70,7 +70,7 @@
+@@ -73,7 +73,7 @@
   *
   * (default SCHED_TUNABLESCALING_LOG = *(1+ilog(ncpus))
   */
@@ -33,8 +33,8 @@ index 2816afaf9b..10979e07e5 100644
 +unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_NONE;
  
  /*
-  * Minimal preemption granularity for CPU-bound tasks:
-@@ -81,15 +81,11 @@ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
+  * Default base time slice (request size r_i) for SCHED_NORMAL/SCHED_BATCH:
+@@ -87,15 +87,11 @@ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
  unsigned int sysctl_sched_base_slice			= 400000ULL;
  static unsigned int normalized_sysctl_sched_base_slice	= 400000ULL;
  #else

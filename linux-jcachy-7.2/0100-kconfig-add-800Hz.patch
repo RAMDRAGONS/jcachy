@@ -8,7 +8,7 @@ Subject: [PATCH] Apply 0100-kconfig-add-800Hz.patch
  1 file changed, 18 insertions(+)
 
 diff --git a/kernel/Kconfig.hz b/kernel/Kconfig.hz
-index 31053e6197..8780fafdd8 100644
+index e1359db556..40bb0724fd 100644
 --- a/kernel/Kconfig.hz
 +++ b/kernel/Kconfig.hz
 @@ -54,6 +54,14 @@ choice

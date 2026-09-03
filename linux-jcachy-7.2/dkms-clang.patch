@@ -1,8 +1,9 @@
-From f41243b68308a0f0f41167ba078e4e23c87997d1 Mon Sep 17 00:00:00 2001
-From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
-Date: Mon, 3 Aug 2026 22:53:45 -0400
+From 43f3ac9606e8dd2ff132478045122348dde22576 Mon Sep 17 00:00:00 2001
+From: Eric Naim <dnaim@cachyos.org>
+Date: Mon, 23 Feb 2026 12:22:31 +0800
 Subject: [PATCH] dkms-clang
 
+Signed-off-by: Eric Naim <dnaim@cachyos.org>
 ---
  scripts/Makefile.clang | 2 --
  scripts/Makefile.warn  | 4 ----

@@ -21,7 +21,7 @@ Subject: [PATCH] Apply 0001-6.18.3-nap-v0.5.0.patch
  create mode 100644 drivers/cpuidle/governors/nap/nap_nn_sse2.c
 
 diff --git a/drivers/cpuidle/Kconfig b/drivers/cpuidle/Kconfig
-index d6d8386d3f..491b7809fa 100644
+index 00e2562041..72a160c423 100644
 --- a/drivers/cpuidle/Kconfig
 +++ b/drivers/cpuidle/Kconfig
 @@ -44,6 +44,23 @@ config CPU_IDLE_GOV_HALTPOLL

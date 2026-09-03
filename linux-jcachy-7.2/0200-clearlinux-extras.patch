@@ -30,10 +30,10 @@ Subject: [PATCH] Apply 0200-clearlinux-extras.patch
  23 files changed, 102 insertions(+), 23 deletions(-)
 
 diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
-index bdad90f210..e655149063 100644
+index 15fd9ec5ec..554449cd07 100644
 --- a/arch/x86/Kconfig
 +++ b/arch/x86/Kconfig
-@@ -1225,7 +1225,7 @@ config VM86
+@@ -1229,7 +1229,7 @@ config VM86
  	default X86_LEGACY_VM86
  
  config X86_16BIT
@@ -42,7 +42,7 @@ index bdad90f210..e655149063 100644
  	default y
  	depends on MODIFY_LDT_SYSCALL
  	help
-@@ -1243,7 +1243,7 @@ config X86_ESPFIX64
+@@ -1247,7 +1247,7 @@ config X86_ESPFIX64
  	depends on X86_16BIT && X86_64
  
  config X86_VSYSCALL_EMULATION
@@ -51,7 +51,7 @@ index bdad90f210..e655149063 100644
  	default y
  	depends on X86_64
  	help
-@@ -2275,7 +2275,7 @@ config CMDLINE_OVERRIDE
+@@ -2279,7 +2279,7 @@ config CMDLINE_OVERRIDE
  	  be set to 'N' under normal conditions.
  
  config MODIFY_LDT_SYSCALL
@@ -74,7 +74,7 @@ index c95c3aaadf..1ff7a2e820 100644
  	help
  	  Write kernel log output directly into the VGA buffer or to a serial
 diff --git a/arch/x86/include/asm/msr-index.h b/arch/x86/include/asm/msr-index.h
-index 18c4be75e9..168fc4d979 100644
+index 3a8e51a0c9..ce820d08f3 100644
 --- a/arch/x86/include/asm/msr-index.h
 +++ b/arch/x86/include/asm/msr-index.h
 @@ -589,7 +589,7 @@
@@ -87,10 +87,10 @@ index 18c4be75e9..168fc4d979 100644
  #define HWP_EPP_BALANCE_POWERSAVE	0xC0
  #define HWP_EPP_POWERSAVE		0xFF
 diff --git a/arch/x86/include/asm/topology.h b/arch/x86/include/asm/topology.h
-index 8fb61d2465..76d1fc97e0 100644
+index 1825691af9..dc9d4fb570 100644
 --- a/arch/x86/include/asm/topology.h
 +++ b/arch/x86/include/asm/topology.h
-@@ -274,6 +274,7 @@ extern bool __read_mostly sysctl_sched_itmt_enabled;
+@@ -273,6 +273,7 @@ extern bool __read_mostly sysctl_sched_itmt_enabled;
  
  /* Interface to set priority of a cpu */
  void sched_set_itmt_core_prio(int prio, int core_cpu);
@@ -165,7 +165,7 @@ index 243a769fdd..3d4bce75bb 100644
 +	}
 +}
 diff --git a/arch/x86/kernel/tsc.c b/arch/x86/kernel/tsc.c
-index 1728df73e2..d6ae47e1f2 100644
+index fc10dd9290..d1622b8b31 100644
 --- a/arch/x86/kernel/tsc.c
 +++ b/arch/x86/kernel/tsc.c
 @@ -1591,6 +1591,9 @@ unsigned long calibrate_delay_is_known(void)
@@ -235,7 +235,7 @@ index 6779293724..f83fa2157b 100644
  		value1 = clocksource_acpi_pm.read(&clocksource_acpi_pm);
  		for (i = 0; i < ACPI_PM_READ_CHECKS; i++) {
 diff --git a/drivers/cpufreq/intel_pstate.c b/drivers/cpufreq/intel_pstate.c
-index 631ed71313..734733d00e 100644
+index 6b90aa1d56..7f8356221b 100644
 --- a/drivers/cpufreq/intel_pstate.c
 +++ b/drivers/cpufreq/intel_pstate.c
 @@ -382,6 +382,13 @@ static void intel_pstate_set_itmt_prio(int cpu)
@@ -266,10 +266,10 @@ index 36a4e85c66..1ec479ebc0 100644
  /* fake multicast ability */
  static int set_multicast_list(struct net_device *dev,
 diff --git a/drivers/pci/pci.c b/drivers/pci/pci.c
-index 77b17b13ee..b2aaeb4349 100644
+index b2879a6be5..b76446ea5d 100644
 --- a/drivers/pci/pci.c
 +++ b/drivers/pci/pci.c
-@@ -64,7 +64,7 @@ struct pci_pme_device {
+@@ -65,7 +65,7 @@ struct pci_pme_device {
  	struct pci_dev *dev;
  };
  
@@ -279,11 +279,11 @@ index 77b17b13ee..b2aaeb4349 100644
  /*
   * Following exit from Conventional Reset, devices must be ready within 1 sec
 diff --git a/fs/Kconfig.binfmt b/fs/Kconfig.binfmt
-index 1949e25c77..0f3638ad8d 100644
+index daeac4889d..a1a6b57e66 100644
 --- a/fs/Kconfig.binfmt
 +++ b/fs/Kconfig.binfmt
-@@ -169,7 +169,7 @@ config BINFMT_MISC
- 	  don't know what to answer at this point, say Y.
+@@ -183,7 +183,7 @@ config BINFMT_MISC_BPF
+ 	  If you don't know what to answer at this point, say N.
  
  config COREDUMP
 -	bool "Enable core dump support" if EXPERT
@@ -292,7 +292,7 @@ index 1949e25c77..0f3638ad8d 100644
  	help
  	  This option enables support for performing core dumps. You almost
 diff --git a/fs/binfmt_elf.c b/fs/binfmt_elf.c
-index 16a56b6b3f..b722b3a301 100644
+index 06d0df1053..5204e9a3ce 100644
 --- a/fs/binfmt_elf.c
 +++ b/fs/binfmt_elf.c
 @@ -1301,6 +1301,8 @@ static int load_elf_binary(struct linux_binprm *bprm)
@@ -366,10 +366,10 @@ index 3bcc03f3aa..43f794329e 100644
  #define BOND_DEFAULT_TX_QUEUES 16   /* Default number of tx queues per device */
  
 diff --git a/init/Kconfig b/init/Kconfig
-index f17e61fb60..4793d59e94 100644
+index 2ef6b3b35c..172bd4e1e5 100644
 --- a/init/Kconfig
 +++ b/init/Kconfig
-@@ -1754,7 +1754,7 @@ menuconfig EXPERT
+@@ -1779,7 +1779,7 @@ menuconfig EXPERT
  	  Only use this if you really know what you are doing.
  
  config UID16
@@ -393,10 +393,10 @@ index 95e0b3a0f7..c0f915802c 100644
  	md_run_setup();
  
 diff --git a/init/main.c b/init/main.c
-index e363232b42..cb7109dc10 100644
+index 2613d3f9b3..74093eae42 100644
 --- a/init/main.c
 +++ b/init/main.c
-@@ -1284,10 +1284,13 @@ static __init_or_module void
+@@ -1294,10 +1294,13 @@ static __init_or_module void
  trace_initcall_finish_cb(void *data, initcall_t fn, int ret)
  {
  	ktime_t rettime, *calltime = data;
@@ -435,7 +435,7 @@ index b9c180ac1e..e4d7c04e31 100644
  
  	return state;
 diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
-index 1244dcac22..5cd813dd27 100644
+index 134b15a446..dd2763bf5a 100644
 --- a/lib/Kconfig.debug
 +++ b/lib/Kconfig.debug
 @@ -210,7 +210,7 @@ config SYMBOLIC_ERRNAME
@@ -447,7 +447,7 @@ index 1244dcac22..5cd813dd27 100644
  	depends on BUG && (GENERIC_BUG || HAVE_DEBUG_BUGVERBOSE)
  	default y
  	help
-@@ -949,7 +949,7 @@ config DEBUG_NOMMU_REGIONS
+@@ -934,7 +934,7 @@ config DEBUG_NOMMU_REGIONS
  	  regions to be regularly checked for invalid topology.
  
  config DEBUG_MEMORY_INIT
@@ -457,7 +457,7 @@ index 1244dcac22..5cd813dd27 100644
  	help
  	  Enable this for additional checks during memory initialisation.
 diff --git a/mm/Kconfig.debug b/mm/Kconfig.debug
-index 91b3e027b7..fe46f89663 100644
+index 15dca19dd0..4708529cb7 100644
 --- a/mm/Kconfig.debug
 +++ b/mm/Kconfig.debug
 @@ -47,7 +47,7 @@ config DEBUG_PAGEALLOC_ENABLE_DEFAULT

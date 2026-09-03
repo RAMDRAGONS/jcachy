@@ -6,22 +6,22 @@ Subject: [PATCH] Apply 0210-cachymod-misc.patch
 ---
  Makefile                           |  4 ++--
  arch/x86/include/asm/tsc.h         |  3 +++
- block/blk-wbt.c                    |  7 +-----
+ block/blk-wbt.c                    |  7 +------
  block/mq-deadline.c                |  4 ++--
- drivers/acpi/processor_idle.c      |  7 ++++--
- drivers/cpufreq/cpufreq_ondemand.c |  6 ++---
+ drivers/acpi/processor_idle.c      |  7 +++++--
+ drivers/cpufreq/cpufreq_ondemand.c |  6 +++---
  drivers/md/dm-crypt.c              |  3 +++
  drivers/usb/core/quirks.c          |  3 +++
  fs/dcache.c                        |  2 +-
  include/linux/blkdev.h             |  3 ++-
- kernel/sched/fair.c                | 35 ++++++++++++++++++++++--------
+ kernel/sched/fair.c                | 10 ++++++++++
  lib/Kconfig.debug                  |  4 ++--
- net/ipv4/tcp_input.c               | 16 +++++++++++++-
- scripts/Makefile.lib               |  6 ++---
- 14 files changed, 71 insertions(+), 32 deletions(-)
+ net/ipv4/tcp_input.c               | 16 +++++++++++++++-
+ scripts/Makefile.lib               |  6 +++---
+ 14 files changed, 55 insertions(+), 23 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index 71d49de9d9..40d204b6b5 100644
+index 946e07b2d1..74f03085a5 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -469,7 +469,7 @@ KERNELDOC       = $(srctree)/tools/docs/kernel-doc
@@ -75,7 +75,7 @@ index 953d400fd0..90064c2f91 100644
  }
  
 diff --git a/block/mq-deadline.c b/block/mq-deadline.c
-index 824bfc17b2..dfe416558a 100644
+index 5f643c0ce2..1ca2a48377 100644
 --- a/block/mq-deadline.c
 +++ b/block/mq-deadline.c
 @@ -28,7 +28,7 @@
@@ -87,7 +87,7 @@ index 824bfc17b2..dfe416558a 100644
  /*
   * Time after which to dispatch lower priority requests even if higher
   * priority requests are pending.
-@@ -549,7 +549,7 @@ static int dd_init_sched(struct request_queue *q, struct elevator_queue *eq)
+@@ -546,7 +546,7 @@ static int dd_init_sched(struct request_queue *q, struct elevator_queue *eq)
  	dd->fifo_expire[DD_READ] = read_expire;
  	dd->fifo_expire[DD_WRITE] = write_expire;
  	dd->writes_starved = writes_starved;
@@ -97,7 +97,7 @@ index 824bfc17b2..dfe416558a 100644
  	dd->fifo_batch = fifo_batch;
  	dd->prio_aging_expire = prio_aging_expire;
 diff --git a/drivers/acpi/processor_idle.c b/drivers/acpi/processor_idle.c
-index 4b9cbcf0d1..8583924455 100644
+index 854349418e..65fe1bbeb1 100644
 --- a/drivers/acpi/processor_idle.c
 +++ b/drivers/acpi/processor_idle.c
 @@ -524,8 +524,11 @@ static __cpuidle void io_idle(unsigned long addr)
@@ -147,7 +147,7 @@ index 608b617fb8..787f881be9 100644
  	if (ret < 0)
  		goto bad;
 diff --git a/drivers/usb/core/quirks.c b/drivers/usb/core/quirks.c
-index f5a60ccf21..f23212f38b 100644
+index b5b577f0b9..31377fe817 100644
 --- a/drivers/usb/core/quirks.c
 +++ b/drivers/usb/core/quirks.c
 @@ -277,6 +277,9 @@ static const struct usb_device_id usb_quirk_list[] = {
@@ -161,7 +161,7 @@ index f5a60ccf21..f23212f38b 100644
  	{ USB_DEVICE(0x0471, 0x0155), .driver_info = USB_QUIRK_RESET_RESUME },
  
 diff --git a/fs/dcache.c b/fs/dcache.c
-index 3e9af9de70..c09929a1c1 100644
+index 1b1a81f10d..e8dc77d3a8 100644
 --- a/fs/dcache.c
 +++ b/fs/dcache.c
 @@ -73,7 +73,7 @@
@@ -174,10 +174,10 @@ index 3e9af9de70..c09929a1c1 100644
  
  unsigned long vfs_pressure_ratio(unsigned long val)
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
-index 9213a5716f..8522438206 100644
+index 4f7905c341..12f9cdf97c 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
-@@ -684,7 +684,8 @@ enum {
+@@ -682,7 +682,8 @@ enum {
  	QUEUE_FLAG_MAX
  };
  
@@ -188,50 +188,10 @@ index 9213a5716f..8522438206 100644
  void blk_queue_flag_set(unsigned int flag, struct request_queue *q);
  void blk_queue_flag_clear(unsigned int flag, struct request_queue *q);
 diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
-index 46cb5375c9..8c5b2cd324 100644
+index 2963d49d48..7672e7835e 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -13724,12 +13724,21 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
- 			 * ->active_balance_work.  Once set, it's cleared
- 			 * only after active load balance is finished.
- 			 */
--			if (!busiest->active_balance) {
--				busiest->active_balance = 1;
--				busiest->push_cpu = this_cpu;
--				active_balance = 1;
--			}
-+			if (busiest->active_balance)
-+				goto no_active_balance;
- 
-+			/*
-+			 * @busiest dropped its rq_lock in the middle of
-+			 * scheduling out its ->curr task (->on_rq := 0), no
-+			 * need to forcefully punt it away with active balance.
-+			 */
-+			if (!busiest->curr->on_rq)
-+				goto no_active_balance;
-+
-+			busiest->active_balance = 1;
-+			busiest->push_cpu = this_cpu;
-+			active_balance = 1;
-+no_active_balance:
- 			preempt_disable();
- 			raw_spin_rq_unlock_irqrestore(busiest, flags);
- 			if (active_balance) {
-@@ -13743,10 +13752,8 @@ static int sched_balance_rq(int this_cpu, struct rq *this_rq,
- 		sd->nr_balance_failed = 0;
- 	}
- 
--	if (likely(!active_balance) || need_active_balance(&env)) {
--		/* We were unbalanced, so reset the balancing interval */
--		sd->balance_interval = sd->min_interval;
--	}
-+	/* We were unbalanced, so reset the balancing interval */
-+	sd->balance_interval = sd->min_interval;
- 
- 	goto out;
- 
-@@ -15232,6 +15239,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+@@ -15283,6 +15283,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
  
@@ -247,7 +207,7 @@ index 46cb5375c9..8c5b2cd324 100644
  static void switched_to_fair(struct rq *rq, struct task_struct *p)
  {
  	WARN_ON_ONCE(p->se.sched_delayed);
-@@ -15614,6 +15630,7 @@ DEFINE_SCHED_CLASS(fair) = {
+@@ -15662,6 +15671,7 @@ DEFINE_SCHED_CLASS(fair) = {
  	.prio_changed		= prio_changed_fair,
  	.switching_from		= switching_from_fair,
  	.switched_from		= switched_from_fair,
@@ -256,7 +216,7 @@ index 46cb5375c9..8c5b2cd324 100644
  
  	.get_rr_interval	= get_rr_interval_fair,
 diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
-index 5cd813dd27..68cd808f7b 100644
+index dd2763bf5a..9b1c8aae18 100644
 --- a/lib/Kconfig.debug
 +++ b/lib/Kconfig.debug
 @@ -202,7 +202,7 @@ config DYNAMIC_DEBUG_CORE
@@ -278,10 +238,10 @@ index 5cd813dd27..68cd808f7b 100644
  	  Say Y here to make BUG() panics output the file name and line number
  	  of the BUG call as well as the EIP and oops trace.  This aids
 diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
-index 158cb0ceed..76aaee4d01 100644
+index 0f60a1dbf9..3a16bb6f30 100644
 --- a/net/ipv4/tcp_input.c
 +++ b/net/ipv4/tcp_input.c
-@@ -5382,11 +5382,25 @@ static void tcp_ofo_queue(struct sock *sk)
+@@ -5354,11 +5354,25 @@ static void tcp_ofo_queue(struct sock *sk)
  static bool tcp_prune_ofo_queue(struct sock *sk, const struct sk_buff *in_skb);
  static int tcp_prune_queue(struct sock *sk, const struct sk_buff *in_skb);
  

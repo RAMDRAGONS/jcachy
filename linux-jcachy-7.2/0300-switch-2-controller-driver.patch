@@ -38,10 +38,10 @@ Signed-off-by: Vicki Pfau <vi@endrift.com>
  create mode 100644 drivers/input/joystick/nintendo-switch2-usb.c
 
 diff --git a/MAINTAINERS b/MAINTAINERS
-index 8014b9f825..0ace0ddb71 100644
+index 3a19da74d0..d783157299 100644
 --- a/MAINTAINERS
 +++ b/MAINTAINERS
-@@ -19164,6 +19164,7 @@ F:	drivers/scsi/nsp32*
+@@ -19370,6 +19370,7 @@ F:	drivers/scsi/nsp32*
  
  NINTENDO HID DRIVER
  M:	Daniel J. Ogorchock <djogorchock@gmail.com>
@@ -50,10 +50,10 @@ index 8014b9f825..0ace0ddb71 100644
  S:	Maintained
  F:	drivers/hid/hid-nintendo*
 diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
-index 67dd0a9f4d..3b15e819fd 100644
+index aa7fa11a01..16203f2cee 100644
 --- a/drivers/hid/Kconfig
 +++ b/drivers/hid/Kconfig
-@@ -846,10 +846,13 @@ config HID_NINTENDO
+@@ -869,10 +869,13 @@ config HID_NINTENDO
  	depends on LEDS_CLASS
  	select POWER_SUPPLY
  	help
@@ -72,10 +72,10 @@ index 67dd0a9f4d..3b15e819fd 100644
  	To compile this driver as a module, choose M here: the
  	module will be called hid-nintendo.
 diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
-index 561057573c..742569cb8c 100644
+index 341bf58786..a5bbcde638 100644
 --- a/drivers/hid/hid-ids.h
 +++ b/drivers/hid/hid-ids.h
-@@ -1113,6 +1113,10 @@
+@@ -1115,6 +1115,10 @@
  #define USB_DEVICE_ID_NINTENDO_SNESCON	0x2017
  #define USB_DEVICE_ID_NINTENDO_GENCON	0x201e
  #define USB_DEVICE_ID_NINTENDO_N64CON	0x2019
@@ -87,7 +87,7 @@ index 561057573c..742569cb8c 100644
  #define USB_VENDOR_ID_NOVATEK		0x0603
  #define USB_DEVICE_ID_NOVATEK_PCT	0x0600
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index e7302ec01f..78c9ad3c16 100644
+index 43e0f2aaea..0198e2e645 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
 @@ -1,11 +1,13 @@
@@ -131,7 +131,7 @@ index e7302ec01f..78c9ad3c16 100644
  
  /*
   * Reference the url below for the following HID report defines:
-@@ -2662,7 +2669,7 @@ static int joycon_ctlr_handle_event(struct joycon_ctlr *ctlr, u8 *data,
+@@ -2703,7 +2710,7 @@ static int joycon_ctlr_handle_event(struct joycon_ctlr *ctlr, u8 *data,
  	return ret;
  }
  
@@ -140,7 +140,7 @@ index e7302ec01f..78c9ad3c16 100644
  			      struct hid_report *report, u8 *raw_data, int size)
  {
  	struct joycon_ctlr *ctlr = hid_get_drvdata(hdev);
-@@ -2673,7 +2680,7 @@ static int nintendo_hid_event(struct hid_device *hdev,
+@@ -2714,7 +2721,7 @@ static int nintendo_hid_event(struct hid_device *hdev,
  	return joycon_ctlr_handle_event(ctlr, raw_data, size);
  }
  
@@ -149,7 +149,7 @@ index e7302ec01f..78c9ad3c16 100644
  			    const struct hid_device_id *id)
  {
  	int ret;
-@@ -2777,7 +2784,7 @@ static int nintendo_hid_probe(struct hid_device *hdev,
+@@ -2819,7 +2826,7 @@ static int nintendo_hid_probe(struct hid_device *hdev,
  	return ret;
  }
  
@@ -158,7 +158,7 @@ index e7302ec01f..78c9ad3c16 100644
  {
  	struct joycon_ctlr *ctlr = hid_get_drvdata(hdev);
  	unsigned long flags;
-@@ -2796,7 +2803,7 @@ static void nintendo_hid_remove(struct hid_device *hdev)
+@@ -2838,7 +2845,7 @@ static void nintendo_hid_remove(struct hid_device *hdev)
  	hid_hw_stop(hdev);
  }
  
@@ -167,7 +167,7 @@ index e7302ec01f..78c9ad3c16 100644
  {
  	struct joycon_ctlr *ctlr = hid_get_drvdata(hdev);
  	int ret;
-@@ -2819,7 +2826,7 @@ static int nintendo_hid_resume(struct hid_device *hdev)
+@@ -2861,7 +2868,7 @@ static int nintendo_hid_resume(struct hid_device *hdev)
  	return ret;
  }
  
@@ -176,7 +176,7 @@ index e7302ec01f..78c9ad3c16 100644
  {
  	struct joycon_ctlr *ctlr = hid_get_drvdata(hdev);
  
-@@ -2838,7 +2845,1207 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
+@@ -2880,7 +2887,1207 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
  	return 0;
  }
  
@@ -1384,7 +1384,7 @@ index e7302ec01f..78c9ad3c16 100644
  	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
  			 USB_DEVICE_ID_NINTENDO_PROCON) },
  	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
-@@ -2863,10 +4070,67 @@ static const struct hid_device_id nintendo_hid_devices[] = {
+@@ -2905,10 +4112,67 @@ static const struct hid_device_id nintendo_hid_devices[] = {
  			 USB_DEVICE_ID_NINTENDO_N64CON) },
  	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_HORI,
  			 USB_DEVICE_ID_HORI_WIRELESS_SWITCH_PAD) },
@@ -1452,7 +1452,7 @@ index e7302ec01f..78c9ad3c16 100644
  static struct hid_driver nintendo_hid_driver = {
  	.name		= "nintendo",
  	.id_table	= nintendo_hid_devices,
-@@ -2894,4 +4158,5 @@ MODULE_LICENSE("GPL");
+@@ -2936,4 +4200,5 @@ MODULE_LICENSE("GPL");
  MODULE_AUTHOR("Ryan McClelland <rymcclel@gmail.com>");
  MODULE_AUTHOR("Emily Strickland <linux@emily.st>");
  MODULE_AUTHOR("Daniel J. Ogorchock <djogorchock@gmail.com>");
@@ -2052,7 +2052,6 @@ index 0000000000..36a5ffbd6a
 -- 
 2.55.0
 
-
 From 06adb78971651155cb9df62251cca0f95ca4eced Mon Sep 17 00:00:00 2001
 From: Vicki Pfau <vi@endrift.com>
 Date: Tue, 11 Aug 2026 18:20:34 -0700
@@ -2074,10 +2073,10 @@ Signed-off-by: Vicki Pfau <vi@endrift.com>
  2 files changed, 215 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
-index 3b15e819fd..93173db854 100644
+index 16203f2cee..dd631700d7 100644
 --- a/drivers/hid/Kconfig
 +++ b/drivers/hid/Kconfig
-@@ -862,10 +862,10 @@ config NINTENDO_FF
+@@ -885,10 +885,10 @@ config NINTENDO_FF
  	depends on HID_NINTENDO
  	select INPUT_FF_MEMLESS
  	help
@@ -2093,7 +2092,7 @@ index 3b15e819fd..93173db854 100644
  config HID_NTI
  	tristate "NTI keyboard adapters"
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index 78c9ad3c16..4f58b6f9df 100644
+index 0198e2e645..6abd3de20b 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
 @@ -37,6 +37,7 @@
@@ -2104,7 +2103,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  #include <linux/kernel.h>
  #include <linux/hid.h>
  #include <linux/idr.h>
-@@ -2989,6 +2990,7 @@ enum switch2_init_step {
+@@ -3031,6 +3032,7 @@ enum switch2_init_step {
  	NS2_INIT_READ_USER_SECONDARY_CALIB,
  	NS2_INIT_SET_FEATURE_MASK,
  	NS2_INIT_ENABLE_FEATURES,
@@ -2112,7 +2111,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  	NS2_INIT_GRIP_BUTTONS,
  	NS2_INIT_REPORT_FORMAT,
  	NS2_INIT_INPUT,
-@@ -3020,6 +3022,18 @@ struct switch2_stick_calibration {
+@@ -3062,6 +3064,18 @@ struct switch2_stick_calibration {
  	struct switch2_axis_calibration y;
  };
  
@@ -2131,7 +2130,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  struct switch2_controller {
  	struct hid_device *hdev;
  	struct switch2_cfg_intf *cfg;
-@@ -3043,8 +3057,45 @@ struct switch2_controller {
+@@ -3085,8 +3099,45 @@ struct switch2_controller {
  
  	uint32_t player_id;
  	struct led_classdev *leds;
@@ -2177,7 +2176,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  static DEFINE_MUTEX(switch2_controllers_lock);
  static LIST_HEAD(switch2_controllers);
  
-@@ -3136,7 +3187,7 @@ static const uint8_t switch2_init_cmd_data[] = {
+@@ -3178,7 +3229,7 @@ static const uint8_t switch2_init_cmd_data[] = {
  static const uint8_t switch2_one_data[] = { 0x01, 0x00, 0x00, 0x00 };
  
  static const uint8_t switch2_feature_mask[] = {
@@ -2186,7 +2185,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  	0x00, 0x00, 0x00
  };
  
-@@ -3176,6 +3227,9 @@ static struct switch2_controller *switch2_get_controller(const char *phys)
+@@ -3218,6 +3269,9 @@ static struct switch2_controller *switch2_get_controller(const char *phys)
  	INIT_LIST_HEAD(&ns2->entry);
  	list_add(&ns2->entry, &switch2_controllers);
  	strscpy(ns2->phys, phys, sizeof(ns2->phys));
@@ -2196,7 +2195,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  	return ns2;
  }
  
-@@ -3209,6 +3263,128 @@ static void switch2_kref_put(struct kref *refcount)
+@@ -3251,6 +3305,128 @@ static void switch2_kref_put(struct kref *refcount)
  	kfree(ns2);
  }
  
@@ -2325,7 +2324,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  static int switch2_set_leds(struct switch2_controller *ns2)
  {
  	int i;
-@@ -3332,6 +3508,26 @@ static int switch2_init_input(struct switch2_controller *ns2)
+@@ -3374,6 +3550,26 @@ static int switch2_init_input(struct switch2_controller *ns2)
  		return -EINVAL;
  	}
  
@@ -2352,7 +2351,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  	hid_info(ns2->hdev, "Firmware version %u.%u.%u (type %i)\n", ns2->version.major,
  		ns2->version.minor, ns2->version.patch, ns2->version.ctlr_type);
  	if (ns2->version.dsp_type >= 0)
-@@ -3764,7 +3960,16 @@ int switch2_init_controller(struct switch2_controller *ns2)
+@@ -3806,7 +4002,16 @@ int switch2_init_controller(struct switch2_controller *ns2)
  		return ns2->cfg->send_command(NS2_CMD_FEATSEL, NS2_SUBCMD_FEATSEL_SET_MASK,
  			switch2_feature_mask, sizeof(switch2_feature_mask), ns2->cfg);
  	case NS2_INIT_ENABLE_FEATURES:
@@ -2370,7 +2369,7 @@ index 78c9ad3c16..4f58b6f9df 100644
  	case NS2_INIT_GRIP_BUTTONS:
  		if (!switch2_ctlr_is_joycon(ns2->ctlr_type)) {
  			switch2_init_step_done(ns2, ns2->init_step);
-@@ -3877,6 +4082,10 @@ int switch2_receive_command(struct switch2_controller *ns2,
+@@ -3919,6 +4124,10 @@ int switch2_receive_command(struct switch2_controller *ns2,
  			switch2_init_step_done(ns2, NS2_INIT_GET_FIRMWARE_INFO);
  		}
  		break;
@@ -2383,7 +2382,6 @@ index 78c9ad3c16..4f58b6f9df 100644
  	}
 -- 
 2.55.0
-
 
 From 53a06fdcb37754e7dfdacb7d4a41553e1d93991e Mon Sep 17 00:00:00 2001
 From: Vicki Pfau <vi@endrift.com>
@@ -2402,10 +2400,10 @@ Signed-off-by: Vicki Pfau <vi@endrift.com>
  1 file changed, 146 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index 4f58b6f9df..d012a7a752 100644
+index 6abd3de20b..e550c7b69f 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
-@@ -2873,6 +2873,36 @@ static int joycon_suspend(struct hid_device *hdev, pm_message_t message)
+@@ -2915,6 +2915,36 @@ static int joycon_suspend(struct hid_device *hdev, pm_message_t message)
  #define NS2_BTN3_SR	BIT(6)
  #define NS2_BTN3_SL	BIT(7)
  
@@ -2442,7 +2440,7 @@ index 4f58b6f9df..d012a7a752 100644
  #define NS2_BTN_JCR_HOME	BIT(0)
  #define NS2_BTN_JCR_GR		BIT(2)
  #define NS2_BTN_JCR_C		NS2_BTN3_C
-@@ -3121,6 +3151,22 @@ static const struct switch2_ctlr_button_mapping ns2_left_joycon_button_mappings[
+@@ -3163,6 +3193,22 @@ static const struct switch2_ctlr_button_mapping ns2_left_joycon_button_mappings[
  	{ /* sentinel */ },
  };
  
@@ -2465,7 +2463,7 @@ index 4f58b6f9df..d012a7a752 100644
  static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_mappings[] = {
  	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
  	{ BTN_EAST,	0, NS2_BTNR_B,		},
-@@ -3138,6 +3184,23 @@ static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_mappings
+@@ -3180,6 +3226,23 @@ static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_mappings
  	{ /* sentinel */ },
  };
  
@@ -2487,9 +2485,9 @@ index 4f58b6f9df..d012a7a752 100644
 +};
 +
  static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
- 	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
- 	{ BTN_EAST,	0, NS2_BTNR_B,		},
-@@ -3159,6 +3222,27 @@ static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
+ 	{ BTN_SOUTH,	0, NS2_BTNR_B,		},
+ 	{ BTN_EAST,	0, NS2_BTNR_A,		},
+@@ -3201,6 +3264,27 @@ static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
  	{ /* sentinel */ },
  };
  
@@ -2517,7 +2515,7 @@ index 4f58b6f9df..d012a7a752 100644
  static const struct switch2_ctlr_button_mapping ns2_gccon_mappings[] = {
  	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
  	{ BTN_EAST,	0, NS2_BTNR_B,		},
-@@ -3176,6 +3260,23 @@ static const struct switch2_ctlr_button_mapping ns2_gccon_mappings[] = {
+@@ -3218,6 +3302,23 @@ static const struct switch2_ctlr_button_mapping ns2_gccon_mappings[] = {
  	{ /* sentinel */ },
  };
  
@@ -2541,7 +2539,7 @@ index 4f58b6f9df..d012a7a752 100644
  static const uint8_t switch2_init_cmd_data[] = {
  	/*
  	 * The last 6 bytes of this packet are the MAC address of
-@@ -3808,11 +3909,51 @@ static int switch2_event(struct hid_device *hdev, struct hid_report *report, uin
+@@ -3850,11 +3951,51 @@ static int switch2_event(struct hid_device *hdev, struct hid_report *report, uin
  
  	switch (report->id) {
  	case NS2_REPORT_UNIFIED:
