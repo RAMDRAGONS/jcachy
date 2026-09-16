@@ -1,15 +1,15 @@
-From 30ca95ba74c37b45e5e151c79b4e087b1b47084b Mon Sep 17 00:00:00 2001
+From 10c0c0872c919a65f28cae377eb051f28600d046 Mon Sep 17 00:00:00 2001
 From: Masahito S <firelzrd@gmail.com>
-Date: Mon, 31 Aug 2026 03:57:24 +0900
-Subject: [PATCH] linux7.2-rc1-lru_marie-0.11.0
+Date: Tue, 15 Sep 2026 16:03:03 +0900
+Subject: [PATCH] linux7.3-rc1-lru_marie-0.11.1
 
 ---
  include/linux/lru_marie.h      |  488 ++++++++
- include/linux/memcontrol.h     |   26 +-
+ include/linux/memcontrol.h     |   31 +-
  include/linux/mm_inline.h      |  103 +-
  include/linux/mmzone.h         |   15 +
  include/linux/swap.h           |   18 +
- include/linux/swap_ops.h       |   10 +
+ include/linux/swap_ops.h       |   12 +
  mm/Kconfig                     |   72 ++
  mm/Makefile                    |    1 +
  mm/compaction.c                |   32 +-
@@ -21,9 +21,9 @@ Subject: [PATCH] linux7.2-rc1-lru_marie-0.11.0
  mm/lru_marie/bitmap.c          |  186 +++
  mm/lru_marie/bitmap.h          |  290 +++++
  mm/lru_marie/core.c            | 1324 +++++++++++++++++++++
- mm/lru_marie/defrag.c          | 1848 +++++++++++++++++++++++++++++
+ mm/lru_marie/defrag.c          | 1847 +++++++++++++++++++++++++++++
  mm/lru_marie/defrag.h          |   85 ++
- mm/lru_marie/defrag_compat.h   |  140 +++
+ mm/lru_marie/defrag_compat.h   |  160 +++
  mm/lru_marie/pfn_install.h     |  204 ++++
  mm/lru_marie/prefetch.h        |  111 ++
  mm/lru_marie/simd.h            |   73 ++
@@ -33,25 +33,26 @@ Subject: [PATCH] linux7.2-rc1-lru_marie-0.11.0
  mm/lru_marie/simd_x86_avx512.S |  220 ++++
  mm/lru_marie/simd_x86_sse2.S   |  158 +++
  mm/lru_marie/state.h           | 1293 +++++++++++++++++++++
- mm/lru_marie/state_compat.h    |   94 ++
+ mm/lru_marie/state_compat.h    |  106 ++
  mm/lru_marie/state_core.c      |  836 ++++++++++++++
  mm/lru_marie/state_folio.c     |  587 ++++++++++
- mm/lru_marie/state_reclaim.c   | 1989 ++++++++++++++++++++++++++++++++
+ mm/lru_marie/state_reclaim.c   | 1988 ++++++++++++++++++++++++++++++++
  mm/lru_marie/version.h         |   22 +
  mm/lru_marie/walker.c          | 1064 +++++++++++++++++
  mm/lru_marie/walker_compat.h   |   97 ++
  mm/memcontrol-v1.c             |   11 +
  mm/memcontrol.c                |   21 +
  mm/mm_init.c                   |    3 +
- mm/oom_kill.c                  |  327 ++++++
+ mm/oom_kill.c                  |  365 ++++++
  mm/page_alloc.c                |  120 +-
  mm/page_alloc.h                |   24 +
- mm/page_io.c                   |  239 +++-
+ mm/page_io.c                   |  270 ++++-
  mm/page_isolation.c            |   31 +-
  mm/rmap.c                      |    6 +
  mm/swap.h                      |    4 +
- mm/vmscan.c                    |  512 +++++++-
- 47 files changed, 13698 insertions(+), 34 deletions(-)
+ mm/vmscan.c                    |  526 ++++++++-
+ scripts/setlocalversion        |    2 +-
+ 48 files changed, 13818 insertions(+), 36 deletions(-)
  create mode 100644 include/linux/lru_marie.h
  create mode 100644 mm/lru_marie/Makefile
  create mode 100644 mm/lru_marie/account.h
@@ -573,13 +574,18 @@ index 0000000000..afdceacc4e
 +
 +#endif /* _LINUX_LRU_MARIE_H */
 diff --git a/include/linux/memcontrol.h b/include/linux/memcontrol.h
-index 7d1c0ce189..fb5a27a36a 100644
+index 7d1c0ce189..7954125b5f 100644
 --- a/include/linux/memcontrol.h
 +++ b/include/linux/memcontrol.h
-@@ -898,14 +898,38 @@ static inline bool mem_cgroup_online(struct mem_cgroup *memcg)
- void mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
- 		int zid, long nr_pages);
+@@ -370,6 +370,30 @@ enum objext_flags {
  
+ #define OBJEXTS_FLAGS_MASK (__NR_OBJEXTS_FLAGS - 1)
+ 
++/*
++ * Declared outside the CONFIG_MEMCG branches on purpose: the definition in
++ * mm/lru_marie/core.c is unconditional under CONFIG_LRU_MARIE, and x86_64
++ * defconfig builds with CONFIG_MEMCG=n (-Wmissing-prototypes otherwise).
++ */
 +#ifdef CONFIG_LRU_MARIE
 +/*
 + * Out-of-line (lru_marie_enabled()'s static key lives in lru_marie.h, which
@@ -599,8 +605,10 @@ index 7d1c0ce189..fb5a27a36a 100644
 +				       int zone_idx, unsigned long stock);
 +#endif
 +
- static inline
- unsigned long mem_cgroup_get_zone_lru_size(struct lruvec *lruvec,
+ #ifdef CONFIG_MEMCG
+ /*
+  * After the initialization objcg->memcg is always pointing at
+@@ -903,9 +927,14 @@ unsigned long mem_cgroup_get_zone_lru_size(struct lruvec *lruvec,
  		enum lru_list lru, int zone_idx)
  {
  	struct mem_cgroup_per_node *mz;
@@ -865,22 +873,24 @@ index 5658a1634b..7b7155039d 100644
  static inline bool vm_swap_full(void)
  {
 diff --git a/include/linux/swap_ops.h b/include/linux/swap_ops.h
-index 57ac6c703f..b55873c306 100644
+index 57ac6c703f..fb237b4c05 100644
 --- a/include/linux/swap_ops.h
 +++ b/include/linux/swap_ops.h
-@@ -17,6 +17,16 @@ struct swap_iocb {
+@@ -17,6 +17,18 @@ struct swap_iocb {
  struct swap_io_ctx {
  	struct swap_iocb	*sio;
  	struct swap_info_struct	*sis;
 +#ifdef CONFIG_LRU_MARIE
 +	/*
-+	 * Set by a caller that is not in the reclaim path and therefore does
-+	 * not need a sync-IO swap device's writeback flag cleared per folio
-+	 * (kcompressd). It lets swap_add_folio() keep accumulating into the
-+	 * current swap_iocb so a run of mergeable folios leaves as one
-+	 * multi-segment bio instead of one bio each.
++	 * Suppress swap_add_folio()'s force-submit-per-folio on
++	 * SWP_SYNCHRONOUS_IO devices so a batch of folios coalesces into one
++	 * multi-segment bio. Only mm/page_io.c's kcompressd drain sets this:
++	 * it is not the reclaimer, so nothing is waiting on the folios'
++	 * writeback bit for reclaim progress. Every other swap_io_ctx is
++	 * zero-initialised ("= {}") and therefore keeps stock behaviour.
++	 * Marie-only; the field does not exist under CONFIG_LRU_MARIE=n.
 +	 */
-+	bool			batched;
++	bool			defer_sync_submit;
 +#endif
  };
  
@@ -981,7 +991,7 @@ index e7245cb88c..ac15826772 100644
  obj-$(CONFIG_HAS_DMA)	+= dmapool.o
  obj-$(CONFIG_HUGETLBFS)	+= hugetlb.o hugetlb_sysfs.o hugetlb_sysctl.o
 diff --git a/mm/compaction.c b/mm/compaction.c
-index d9bb55c562..944cde298b 100644
+index a049415512..305bf34bfd 100644
 --- a/mm/compaction.c
 +++ b/mm/compaction.c
 @@ -24,6 +24,7 @@
@@ -992,7 +1002,7 @@ index d9bb55c562..944cde298b 100644
  #include "page_alloc.h"
  #include "internal.h"
  
-@@ -3108,6 +3109,23 @@ static void kcompactd_do_work(pg_data_t *pgdat)
+@@ -3104,6 +3105,23 @@ static void kcompactd_do_work(pg_data_t *pgdat)
  							cc.highest_zoneidx);
  	count_compact_event(KCOMPACTD_WAKE);
  
@@ -1016,7 +1026,7 @@ index d9bb55c562..944cde298b 100644
  	for (zoneid = 0; zoneid <= cc.highest_zoneidx; zoneid++) {
  		int status;
  
-@@ -3244,7 +3262,19 @@ static int kcompactd(void *p)
+@@ -3240,7 +3258,19 @@ static int kcompactd(void *p)
  			unsigned int prev_score, score;
  
  			prev_score = fragmentation_score_node(pgdat);
@@ -1463,7 +1473,7 @@ index c02dcea9c0..bd763dd22a 100644
  }
  
 diff --git a/mm/huge_memory.c b/mm/huge_memory.c
-index 35ad3f01cf..578c8956a9 100644
+index ced400f72d..a3bb8cf715 100644
 --- a/mm/huge_memory.c
 +++ b/mm/huge_memory.c
 @@ -6,6 +6,7 @@
@@ -1474,7 +1484,7 @@ index 35ad3f01cf..578c8956a9 100644
  #include <linux/sched.h>
  #include <linux/sched/mm.h>
  #include <linux/sched/numa_balancing.h>
-@@ -3618,14 +3619,48 @@ static void lru_add_split_folio(struct folio *folio, struct folio *new_folio,
+@@ -3614,14 +3615,48 @@ static void lru_add_split_folio(struct folio *folio, struct folio *new_folio,
  		/* page reclaim is reclaiming a huge page */
  		VM_WARN_ON(folio_test_lru(folio));
  		folio_get(new_folio);
@@ -3671,10 +3681,10 @@ index 0000000000..bc8017a7f6
 +subsys_initcall(marie_init);
 diff --git a/mm/lru_marie/defrag.c b/mm/lru_marie/defrag.c
 new file mode 100644
-index 0000000000..ad6cff46a7
+index 0000000000..b8594282d0
 --- /dev/null
 +++ b/mm/lru_marie/defrag.c
-@@ -0,0 +1,1848 @@
+@@ -0,0 +1,1847 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * mm/lru_marie/defrag.c -- Marie defragmentation, Step 1.
@@ -3715,7 +3725,6 @@ index 0000000000..ad6cff46a7
 +#include <linux/lru_marie.h>		/* lru_marie_enabled */
 +
 +#include "../internal.h"		/* folio_isolate_lru, migration_target_control */
-+#include "../page_alloc.h"	/* buddy_order, free_pages_prepare, pageblock_pfn_to_page */
 +#include "defrag_compat.h"		/* marie_defrag_prep_allocated (6.14 refcount split) */
 +#include "defrag.h"
 +#include "state.h"			/* marie_gen_occupied, MARIE_PFN_NR_GENS */
@@ -5616,10 +5625,10 @@ index 0000000000..ca20bc9ab4
 +#endif /* _MM_LRU_MARIE_DEFRAG_H */
 diff --git a/mm/lru_marie/defrag_compat.h b/mm/lru_marie/defrag_compat.h
 new file mode 100644
-index 0000000000..f65d5467c3
+index 0000000000..770bbbad92
 --- /dev/null
 +++ b/mm/lru_marie/defrag_compat.h
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,160 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +#ifndef _MM_LRU_MARIE_DEFRAG_COMPAT_H
 +#define _MM_LRU_MARIE_DEFRAG_COMPAT_H
@@ -5644,7 +5653,18 @@ index 0000000000..f65d5467c3
 +
 +#include <linux/version.h>
 +#include <linux/page-isolation.h>	/* enum pb_isolate_mode (>= 6.17) */
-+#include "../page_alloc.h"		/* post_alloc_hook */
++
++/*
++ * 7.3 split the buddy-allocator's mm-internal API out of mm/internal.h into
++ * the new mm/page_alloc.h: post_alloc_hook(), free_pages_prepare(),
++ * buddy_order(), buddy_order_unsafe(), pageblock_pfn_to_page(),
++ * set_zone_contiguous() and struct alloc_context all live there now.
++ * defrag.c uses all of them, so pull the header in on >= 7.3; on older
++ * kernels "../internal.h" (included by defrag.c just above us) still has them.
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include "../page_alloc.h"
++#endif
 +
 +/*
 + * marie_defrag_prep_allocated - turn a harvested raw free page (refcount 0,
@@ -5666,10 +5686,19 @@ index 0000000000..f65d5467c3
 + * just-remapped folio, refcount underflow, live-anon corruption); on the
 + * release path __free_pages()' put_page_testzero() never fires, leaking the
 + * pool back-pressure.
++ *
++ * 7.3 additionally gave post_alloc_hook() a trailing @alloc_flags argument
++ * (used only to feed pgalloc_tag_add()); stock compaction_alloc() passes
++ * ALLOC_DEFAULT there, and so do we -- this is the same "hand a raw free page
++ * out as a migration target" contract.
 + */
 +static inline void marie_defrag_prep_allocated(struct page *page, unsigned int order)
 +{
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
 +	post_alloc_hook(page, order, __GFP_MOVABLE, ALLOC_DEFAULT);
++#else
++	post_alloc_hook(page, order, __GFP_MOVABLE);
++#endif
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 14, 0)
 +	set_page_refcounted(page);
 +#endif
@@ -8322,10 +8351,10 @@ index 0000000000..986e24f0bd
 +#endif /* _MM_LRU_MARIE_STATE_H */
 diff --git a/mm/lru_marie/state_compat.h b/mm/lru_marie/state_compat.h
 new file mode 100644
-index 0000000000..4d07cedd9c
+index 0000000000..0eb587eec4
 --- /dev/null
 +++ b/mm/lru_marie/state_compat.h
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,106 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +#ifndef _MM_LRU_MARIE_STATE_COMPAT_H
 +#define _MM_LRU_MARIE_STATE_COMPAT_H
@@ -8350,6 +8379,18 @@ index 0000000000..4d07cedd9c
 + */
 +
 +#include <linux/version.h>
++
++/*
++ * mem_cgroup_swappiness() moved out of <linux/memcontrol.h> and into the
++ * mm-private mm/swap.h in 7.3 (the same swap-layer reshuffle that replaced
++ * "struct swap_iocb **plug" with "struct swap_io_ctx *ctx" and renamed
++ * mm/swap.c to mm/folio.c).  Pull the private header in on >= 7.3 so the
++ * reclaim engine keeps calling the identical name on every target; on older
++ * kernels <linux/memcontrol.h> (already included by the callers) supplies it.
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++#include "../swap.h"
++#endif
 +
 +/*
 + * folio->flags became the typed memdesc_flags_t -- struct { unsigned long f; }
@@ -9857,10 +9898,10 @@ index 0000000000..275d215878
 +}
 diff --git a/mm/lru_marie/state_reclaim.c b/mm/lru_marie/state_reclaim.c
 new file mode 100644
-index 0000000000..19514647bd
+index 0000000000..5731815039
 --- /dev/null
 +++ b/mm/lru_marie/state_reclaim.c
-@@ -0,0 +1,1989 @@
+@@ -0,0 +1,1988 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Marie reclaim engine: the PTE-walker-independent scan/isolate loop,
@@ -9913,7 +9954,6 @@ index 0000000000..19514647bd
 +#endif
 +
 +#include "../internal.h"	/* struct scan_control, shrink_folio_list */
-+#include "../swap.h"	/* mem_cgroup_swappiness */
 +#include "state_compat.h"	/* MARIE_FOLIO_FLAGS, marie_shrink_folio_list, marie_account_reclaim */
 +#include "account.h"
 +#include "pfn_install.h"
@@ -11852,7 +11892,7 @@ index 0000000000..19514647bd
 +}
 diff --git a/mm/lru_marie/version.h b/mm/lru_marie/version.h
 new file mode 100644
-index 0000000000..5e45dfff57
+index 0000000000..fa3edd405c
 --- /dev/null
 +++ b/mm/lru_marie/version.h
 @@ -0,0 +1,22 @@
@@ -11875,7 +11915,7 @@ index 0000000000..5e45dfff57
 +#define MARIE_PROGNAME	"Marie LRU"
 +#define MARIE_AUTHOR	"Masahito Suzuki"
 +
-+#define MARIE_VERSION	"0.11.0"
++#define MARIE_VERSION	"0.11.1"
 +
 +#endif /* _MM_LRU_MARIE_VERSION_H */
 diff --git a/mm/lru_marie/walker.c b/mm/lru_marie/walker.c
@@ -13134,7 +13174,7 @@ index 1533aebafb..91454d5991 100644
  
  	for (i = 0; i < NR_VMSCAN_THROTTLE; i++)
 diff --git a/mm/oom_kill.c b/mm/oom_kill.c
-index 5f372f6e26..35204918bd 100644
+index 5f372f6e26..39dd22dcd9 100644
 --- a/mm/oom_kill.c
 +++ b/mm/oom_kill.c
 @@ -45,6 +45,10 @@
@@ -13184,7 +13224,7 @@ index 5f372f6e26..35204918bd 100644
  };
  #endif
  
-@@ -1255,3 +1281,304 @@ SYSCALL_DEFINE2(process_mrelease, int, pidfd, unsigned int, flags)
+@@ -1255,3 +1281,342 @@ SYSCALL_DEFINE2(process_mrelease, int, pidfd, unsigned int, flags)
  	return -ENOSYS;
  #endif /* CONFIG_MMU */
  }
@@ -13307,10 +13347,11 @@ index 5f372f6e26..35204918bd 100644
 +		 * >= half refault, real memory
 +		 * pressure -- but no PSI ring (warm-up is one window, not five)
 +		 * and a severity-WEIGHTED accumulator rather than a flat window
-+		 * count: each treadmill window adds w in [1..THRASH_WD_SCORE]
++		 * count: each treadmill window adds w in [1..THRASH_WD_SCORE/2]
 +		 * scaled by how badly the box is losing, so a severe treadmill
 +		 * (near-zero NET progress AND free in the reserves) reaches the
-+		 * threshold in a single ~2s window, while a marginal one still
++		 * threshold in two ~2s windows -- the cap is half the threshold,
++		 * so no single sample can ever OOM -- while a marginal one still
 +		 * needs the full THRASH_WD_SCORE windows (== the classic 16s: no
 +		 * regression at the mild end). Honest net-progress: any window
 +		 * where reclaim actually lifted free (real headroom) resets the
@@ -13369,11 +13410,48 @@ index 5f372f6e26..35204918bd 100644
 +				 */
 +				hot_windows = 0;
 +			} else {
-+				/* free <= high is guaranteed by the escape above
-+				 * (base 2 folds in the old "below high wmark" +1). */
-+				w = 2;
-+				if (dr >= ds)		w += 3;	/* ~zero net progress */
-+				if (free <= min * 2)	w += 3;	/* into the reserves */
++				/*
++				 * free <= high is guaranteed by the escape above,
++				 * so both severity terms must say something that
++				 * arming does not. The reserves term did not.
++				 *
++				 * high is min + 2 * gap, gap = max(min / 4, managed *
++				 * watermark_scale_factor / 10000). At the default
++				 * scale factor of 10 the gap collapses to min / 4 --
++				 * and high to 1.5 * min -- once min_free_kbytes is
++				 * more than ~0.2% of RAM, which is where any tuned
++				 * desktop sits. "free <= min * 2" is then implied by
++				 * "free <= high": every armed window scored the full
++				 * 2 + 3 + 3 == THRASH_WD_SCORE and fired immediately,
++				 * so the ladder this path exists for degenerated into
++				 * "OOM on the first 2s sample". Measured, Sum() over
++				 * populated zones: 32 GiB with min_free_kbytes=256M ->
++				 * high 98301 vs 2*min 131070; 30 GiB with 66M ->
++				 * 32809 vs 33790. Both collapsed. The first is the
++				 * reported case: a parallel build was killed 57 pages
++				 * below high, one window after the ratio first tipped,
++				 * with 3.3 GB of reclaimable file cache still resident
++				 * and 65 GB of free swap.
++				 *
++				 * Reserves now means the reserves: free at or below
++				 * the min watermark, where allocation is into what
++				 * only ALLOC_HARDER may spend. high > min always, so
++				 * this is strictly inside the armed band by
++				 * construction and cannot be implied by it again.
++				 *
++				 * The weights are halved with that fix so the maximum
++				 * single-window score is THRASH_WD_SCORE / 2: two
++				 * windows minimum before any kill, at any severity. A
++				 * 2s sample cannot tell a burst from a treadmill --
++				 * the reported dr/ds tipped for exactly one window --
++				 * and the freeze this guards against is minutes long,
++				 * so 4s costs nothing to catch it. The mildest window
++				 * is back to 1, restoring the full 8-window / 16s
++				 * classic floor that a base of 2 had quietly halved.
++				 */
++				w = 1;
++				if (dr >= ds)		w += 2;	/* ~zero net progress */
++				if (free <= min)	w += 1;	/* into the reserves */
 +				hot_windows += w;
 +				if (hot_windows >= THRASH_WD_SCORE) {
 +					scnprintf(reason, sizeof(reason),
@@ -13490,7 +13568,7 @@ index 5f372f6e26..35204918bd 100644
 +}
 +late_initcall(thrash_wd_init);
 diff --git a/mm/page_alloc.c b/mm/page_alloc.c
-index 159a034cc3..8753afb38e 100644
+index 12fac9084c..eaee96e4ca 100644
 --- a/mm/page_alloc.c
 +++ b/mm/page_alloc.c
 @@ -16,6 +16,7 @@
@@ -13501,7 +13579,7 @@ index 159a034cc3..8753afb38e 100644
  #include <linux/highmem.h>
  #include <linux/interrupt.h>
  #include <linux/jiffies.h>
-@@ -1334,6 +1335,28 @@ static __always_inline bool __free_pages_prepare(struct page *page,
+@@ -1330,6 +1331,28 @@ static __always_inline bool __free_pages_prepare(struct page *page,
  	trace_mm_page_free(page, order);
  	kmsan_free_page(page, order);
  
@@ -13530,7 +13608,7 @@ index 159a034cc3..8753afb38e 100644
  	if (memcg_kmem_online() && PageMemcgKmem(page))
  		__memcg_kmem_uncharge_page(page, order);
  
-@@ -4643,25 +4666,97 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
+@@ -4639,25 +4662,97 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
  static inline bool
  should_reclaim_retry(gfp_t gfp_mask, unsigned order,
  		     struct alloc_context *ac, int alloc_flags,
@@ -13631,7 +13709,7 @@ index 159a034cc3..8753afb38e 100644
  
  	/*
  	 * Keep reclaiming pages while there is a chance this will lead
-@@ -4820,6 +4915,20 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4816,6 +4911,20 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  		WARN_ON_ONCE(current->flags & PF_MEMALLOC);
  	}
  
@@ -13652,7 +13730,7 @@ index 159a034cc3..8753afb38e 100644
  restart:
  	compaction_retries = 0;
  	no_progress_loops = 0;
-@@ -4827,6 +4936,9 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4823,6 +4932,9 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  	compact_priority = DEF_COMPACT_PRIORITY;
  	cpuset_mems_cookie = read_mems_allowed_begin();
  	zonelist_iter_cookie = zonelist_iter_begin();
@@ -13662,7 +13740,7 @@ index 159a034cc3..8753afb38e 100644
  
  	/*
  	 * For costly allocations, try direct compaction first, as it's likely
-@@ -5001,7 +5113,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4997,7 +5109,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  		goto restart;
  
  	if (should_reclaim_retry(gfp_mask, order, ac, alloc_flags,
@@ -13672,13 +13750,13 @@ index 159a034cc3..8753afb38e 100644
  
  	/*
 diff --git a/mm/page_alloc.h b/mm/page_alloc.h
-index b9259deddb..8f3de497b2 100644
+index b9259deddb..2847fd2fcc 100644
 --- a/mm/page_alloc.h
 +++ b/mm/page_alloc.h
-@@ -91,6 +91,30 @@ struct alloc_context {
- 	 */
- 	enum zone_type highest_zoneidx;
+@@ -93,6 +93,30 @@ struct alloc_context {
  	bool spread_dirty_pages;
+ 	/* Only flags that are global to the whole allocation go here. */
+ 	unsigned int alloc_flags;
 +
 +#ifdef CONFIG_LRU_MARIE
 +	/*
@@ -13703,14 +13781,14 @@ index b9259deddb..8f3de497b2 100644
 +	 * swap device that never looks full livelocks the OOM path forever).
 +	 */
 +	unsigned long last_refaults;
- 	/* Only flags that are global to the whole allocation go here. */
- 	unsigned int alloc_flags;
  };
+ 
+ /*
 diff --git a/mm/page_io.c b/mm/page_io.c
-index 88962571cb..6be9c4e3fe 100644
+index 88962571cb..7ae048a45f 100644
 --- a/mm/page_io.c
 +++ b/mm/page_io.c
-@@ -26,9 +26,30 @@
+@@ -26,9 +26,24 @@
  #include <linux/delayacct.h>
  #include <linux/zswap.h>
  #include <linux/swap_ops.h>
@@ -13724,40 +13802,34 @@ index 88962571cb..6be9c4e3fe 100644
 + * Counter consumed by the early-OOM gate in
 + * mm/page_alloc.c:should_reclaim_retry. Declared in include/linux/swap.h.
 + * Marie-only: omitted entirely under CONFIG_LRU_MARIE=n.
++ *
++ * 7.3 note: the per-bio __end_swap_bio_write() is gone; swap write
++ * completion is funnelled through swap_iocb, so the counter is bumped in
++ * end_swap_bio_write() (once per failed folio, as before).
 + */
 +atomic_long_t nr_swap_write_failed = ATOMIC_LONG_INIT(0);
-+
-+static inline bool swap_ctx_batched(const struct swap_io_ctx *ctx)
-+{
-+	return ctx->batched;
-+}
-+#else
-+static inline bool swap_ctx_batched(const struct swap_io_ctx *ctx)
-+{
-+	return false;
-+}
 +#endif
 +
  int generic_swapfile_activate(struct swap_info_struct *sis,
  				struct file *swap_file,
  				sector_t *span)
-@@ -197,6 +218,197 @@ static void swap_zeromap_folio_clear(struct folio *folio)
+@@ -197,6 +212,155 @@ static void swap_zeromap_folio_clear(struct folio *folio)
  	swap_cluster_unlock(ci);
  }
  
 +/*
 + * do_swapout() - Write a folio to swap space
-+ * @ctx: Swap I/O context collecting folios into a single swap_iocb
++ * @ctx: swap IO batching context (7.3: replaces the old swap_iocb **plug)
 + * @folio: The folio to write out
 + *
 + * This function writes the folio to swap space, either using zswap or
-+ * by queueing it on @ctx. It ensures that the folio is unlocked and the
-+ * reference count is decremented after the operation.
++ * the block/fs swap writeback path. It ensures that the folio is
++ * unlocked and the reference count is decremented after the operation.
 + */
 +static inline void do_swapout(struct swap_io_ctx *ctx, struct folio *folio)
 +{
 +	if (zswap_store(folio)) {
-+		count_mthp_stat(folio_order(folio), MTHP_STAT_SWPOUT);
++		count_mthp_stat(folio_order(folio), MTHP_STAT_ZSWPOUT);
 +		folio_unlock(folio);
 +	} else
 +		__swap_writepage(ctx, folio); /* Implies folio_unlock(folio) */
@@ -13768,17 +13840,30 @@ index 88962571cb..6be9c4e3fe 100644
 +
 +#ifdef CONFIG_LRU_MARIE
 +/*
-+ * do_swapout_batch() - Write a drained batch of folios to swap.
++ * do_swapout_batch() - Write a drained kcompressd batch out to swap.
 + *
-+ * Feeds the whole batch through a single swap_io_ctx so that swap_add_folio()
-+ * merges mergeable neighbours into one multi-segment swap_iocb, and submits
-+ * whatever is still pending once the batch is exhausted. The ctx is marked
-+ * batched: kcompressd is not the reclaim path, so a sync-IO device (ZRAM,
-+ * zswap) may accumulate a run rather than take one bio per folio.
++ * 7.3 rework: mm/page_io.c now owns a generic swap_iocb batching layer
++ * (swap_add_folio() + ->can_merge()), so the hand-rolled multi-segment
++ * bio builder this used to carry (swap_writepage_bdev_sync_batch() and
++ * __end_swap_bio_write_batch(), both against the now-deleted
++ * swap_writepage_bdev_sync()) is gone. Instead we share ONE swap_io_ctx
++ * across the whole drained batch and set ctx.defer_sync_submit, which
++ * suppresses swap_add_folio()'s force-submit-per-folio on
++ * SWP_SYNCHRONOUS_IO devices (zram). Contiguous same-device folios then
++ * coalesce into one multi-segment bio exactly as before, using upstream's
++ * own (stricter, blkcg-aware) merge test. The trailing swap_write_submit()
++ * drains the tail; for SWP_SYNCHRONOUS_IO that is submit_bio_wait(), so
++ * writeback is still cleared synchronously before we return, matching the
++ * previous behaviour.
++ *
++ * The force-submit is safe to defer here only because kcompressd is not
++ * itself the reclaimer: it runs on its own kthread with a reference the
++ * enqueue side took, so nothing is waiting on the folio's writeback bit
++ * to make reclaim progress.
 + */
 +static void do_swapout_batch(struct folio **folios, unsigned int n)
 +{
-+	struct swap_io_ctx ctx = { .batched = true };
++	struct swap_io_ctx ctx = { .defer_sync_submit = true };
 +	unsigned int i;
 +
 +	for (i = 0; i < n; i++)
@@ -13788,63 +13873,8 @@ index 88962571cb..6be9c4e3fe 100644
 +}
 +
 +/*
-+ * Batch-drain size for kcompressd(): reuses the existing |vm_kcompressd|
-+ * queue-depth knob (no separate batch-size knob) clamped to a sane range
-+ * for the stack-allocated drain array.
-+ */
-+static inline unsigned int kcompressd_drain_depth(void)
-+{
-+	int d = abs(READ_ONCE(vm_kcompressd));
-+
-+	if (d < 1)
-+		return 1;
-+	if (d > SWAP_CLUSTER_MAX)
-+		return SWAP_CLUSTER_MAX;
-+	return d;
-+}
-+
-+/*
-+ * kcompressd() - Kernel thread for compressing folios
-+ * @p: Pointer to pg_data_t structure
-+ *
-+ * This function runs in a kernel thread and waits for folios to be
-+ * queued for compression. It drains its fifo in batches and dispatches
-+ * each batch through do_swapout_batch().
-+ */
-+int kcompressd(void *p)
-+{
-+	pg_data_t *pgdat = (pg_data_t *)p;
-+	struct folio *batch[SWAP_CLUSTER_MAX];
-+	unsigned int n;
-+
-+	/* * kcompressd runs with PF_MEMALLOC and PF_KSWAPD flags set to
-+	 * allow it to allocate memory for compression without being
-+	 * restricted by the current memory allocation context.
-+	 * Also PF_KSWAPD prevents Intel Graphics driver from crashing
-+	 * the system in i915_gem_shrinker.c:i915_gem_shrinker_scan()
-+	 */
-+	current->flags |= PF_MEMALLOC | PF_KSWAPD;
-+
-+	while (!kthread_should_stop()) {
-+		wait_event_interruptible(pgdat->kcompressd_wait,
-+				!kfifo_is_empty(&pgdat->kcompressd_fifo));
-+
-+		for (;;) {
-+			n = kfifo_out_locked(&pgdat->kcompressd_fifo,
-+				batch,
-+				kcompressd_drain_depth() * sizeof(*batch),
-+				&pgdat->kcompressd_fifo_lock)
-+					/ sizeof(*batch);
-+			if (!n)
-+				break;
-+			do_swapout_batch(batch, n);
-+		}
-+	}
-+	return 0;
-+}
-+
-+/*
 + * kcompressd_store() - Off-load folio compression to kcompressd
++ * @ctx: swap IO batching context of the calling reclaimer
 + * @folio: The folio to compress
 + *
 + * This function attempts to off-load the compression of the folio to
@@ -13939,7 +13969,7 @@ index 88962571cb..6be9c4e3fe 100644
  /*
   * We may have stale swap cache pages in memory: notice
   * them here and get rid of the unnecessary final write.
-@@ -235,6 +447,14 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
+@@ -235,6 +399,14 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
  	 */
  	swap_zeromap_folio_clear(folio);
  
@@ -13954,39 +13984,135 @@ index 88962571cb..6be9c4e3fe 100644
  	if (zswap_store(folio)) {
  		count_mthp_stat(folio_order(folio), MTHP_STAT_ZSWPOUT);
  		goto out_unlock;
-@@ -359,7 +579,8 @@ static void swap_add_folio(struct swap_io_ctx *ctx, struct folio *folio, int rw)
+@@ -255,6 +427,64 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_LRU_MARIE
++/*
++ * Batch-drain size for kcompressd(): reuses the existing |vm_kcompressd|
++ * queue-depth knob (no separate batch-size knob) clamped to a sane range
++ * for the stack-allocated drain array.
++ */
++static inline unsigned int kcompressd_drain_depth(void)
++{
++	int d = abs(READ_ONCE(vm_kcompressd));
++
++	if (d < 1)
++		return 1;
++	if (d > SWAP_CLUSTER_MAX)
++		return SWAP_CLUSTER_MAX;
++	return d;
++}
++
++/*
++ * kcompressd() - Kernel thread for compressing folios
++ * @p: Pointer to pg_data_t structure
++ *
++ * This function runs in a kernel thread and waits for folios to be
++ * queued for compression. It drains its fifo in batches and dispatches
++ * each batch through do_swapout_batch().
++ */
++int kcompressd(void *p)
++{
++	pg_data_t *pgdat = (pg_data_t *)p;
++	struct folio *batch[SWAP_CLUSTER_MAX];
++	unsigned int n;
++
++	/* * kcompressd runs with PF_MEMALLOC and PF_KSWAPD flags set to
++	 * allow it to allocate memory for compression without being
++	 * restricted by the current memory allocation context.
++	 * Also PF_KSWAPD prevents Intel Graphics driver from crashing
++	 * the system in i915_gem_shrinker.c:i915_gem_shrinker_scan()
++	 */
++	current->flags |= PF_MEMALLOC | PF_KSWAPD;
++
++	while (!kthread_should_stop()) {
++		wait_event_interruptible(pgdat->kcompressd_wait,
++				!kfifo_is_empty(&pgdat->kcompressd_fifo));
++
++		for (;;) {
++			n = kfifo_out_locked(&pgdat->kcompressd_fifo,
++				batch,
++				kcompressd_drain_depth() * sizeof(*batch),
++				&pgdat->kcompressd_fifo_lock)
++					/ sizeof(*batch);
++			if (!n)
++				break;
++			do_swapout_batch(batch, n);
++		}
++	}
++	return 0;
++}
++#endif /* CONFIG_LRU_MARIE */
++
+ #if defined(CONFIG_MEMCG) && defined(CONFIG_BLK_CGROUP)
+ static struct cgroup_subsys_state *folio_memcg_blkg_css(struct folio *folio)
+ {
+@@ -329,6 +559,18 @@ static bool swap_can_merge(struct swap_io_ctx *ctx, struct folio *folio,
+ 	return sis->ops->can_merge(folio, prev_folio, prev_folio_size, rw);
+ }
+ 
++#ifdef CONFIG_LRU_MARIE
++static inline bool swap_io_ctx_defer_sync(const struct swap_io_ctx *ctx)
++{
++	return ctx->defer_sync_submit;
++}
++#else
++static inline bool swap_io_ctx_defer_sync(const struct swap_io_ctx *ctx)
++{
++	return false;
++}
++#endif
++
+ static void swap_add_folio(struct swap_io_ctx *ctx, struct folio *folio, int rw)
+ {
+ 	struct swap_info_struct *sis = __swap_entry_to_info(folio->swap);
+@@ -359,7 +601,8 @@ static void swap_add_folio(struct swap_io_ctx *ctx, struct folio *folio, int rw)
  	 * reclaim path beneficial.
  	 */
  	if (++sio->nr_bvecs == ARRAY_SIZE(sio->bvecs) ||
 -	    (rw == WRITE && (sis->flags & SWP_SYNCHRONOUS_IO))) {
-+	    (rw == WRITE && !swap_ctx_batched(ctx) &&
-+	     (sis->flags & SWP_SYNCHRONOUS_IO))) {
++	    (rw == WRITE && (sis->flags & SWP_SYNCHRONOUS_IO) &&
++	     !swap_io_ctx_defer_sync(ctx))) {
  		if (rw == WRITE)
  			swap_write_submit(ctx);
  		else
-@@ -500,6 +721,22 @@ static void swap_write_end(struct swap_iocb *sio, bool failed)
- 		struct page *page = sio->bvecs[p].bv_page;
+@@ -534,10 +777,33 @@ static void end_swap_bio_write(struct bio *bio)
+ 	struct swap_iocb *sio = container_of(bio, struct swap_iocb, bio);
+ 	bool failed = !!bio->bi_status;
  
- 		if (failed) {
-+			/*
-+			 * Bump nr_swap_write_failed so the early-OOM gate in
-+			 * should_reclaim_retry can short-circuit the
-+			 * MAX_RECLAIM_RETRIES wait when the swap backend (most
-+			 * commonly ZRAM/zswap zs_malloc, or a real disk error)
-+			 * has stopped accepting writes: anon reclaim is doomed
-+			 * in that state regardless of get_nr_swap_pages()
-+			 * reporting free entries. Marie-only signal; vanilla
-+			 * MGLRU/Legacy builds (lru_marie_enabled()=false) skip
-+			 * the counter bump so the baseline allocator sees
-+			 * vanilla retry behaviour.
-+			 */
+-	if (failed)
++	if (failed) {
+ 		pr_alert_ratelimited("Write-error on swap-device (%u:%u:%llu)\n",
+ 				     MAJOR(bio_dev(bio)), MINOR(bio_dev(bio)),
+ 				     (unsigned long long)bio->bi_iter.bi_sector);
++		/*
++		 * Bump nr_swap_write_failed so the early-OOM gate in
++		 * should_reclaim_retry can short-circuit the
++		 * MAX_RECLAIM_RETRIES wait when the swap backend (most
++		 * commonly ZRAM/zswap zs_malloc, or a real disk error) has
++		 * stopped accepting writes -- anon reclaim is doomed in that
++		 * state regardless of get_nr_swap_pages() reporting free
++		 * entries. Marie-only signal; vanilla MGLRU/Legacy builds
++		 * (lru_marie_enabled()=false) skip the counter bump so the
++		 * baseline allocator sees vanilla retry behaviour.
++		 *
++		 * 7.3: the old per-folio __end_swap_bio_write() is gone and a
++		 * bio can now carry up to SWAP_CLUSTER_MAX folios, so add
++		 * nr_bvecs rather than 1 -- one count per failed folio, as
++		 * before. Kept on the block-device completion only (the
++		 * swap-over-fs path in swap_fs_write_complete() never fed this
++		 * counter on <= 7.2 either).
++		 */
 +#ifdef CONFIG_LRU_MARIE
-+			if (lru_marie_enabled())
-+				atomic_long_inc(&nr_swap_write_failed);
++		if (lru_marie_enabled())
++			atomic_long_add(sio->nr_bvecs, &nr_swap_write_failed);
 +#endif
- 			set_page_dirty(page);
- 			ClearPageReclaim(page);
- 		}
++	}
+ 	bio_uninit(bio);
+ 	swap_write_end(sio, failed);
+ }
 diff --git a/mm/page_isolation.c b/mm/page_isolation.c
 index e5dfc7bf49..5ba95c2c20 100644
 --- a/mm/page_isolation.c
@@ -14077,7 +14203,7 @@ index 90a551a88d..ba6f193348 100644
  /* linux/mm/swap_state.c */
  extern struct address_space swap_space __read_mostly;
 diff --git a/mm/vmscan.c b/mm/vmscan.c
-index 547ba2148c..f970402ff0 100644
+index f11491ee9e..6932ef9336 100644
 --- a/mm/vmscan.c
 +++ b/mm/vmscan.c
 @@ -39,6 +39,7 @@
@@ -14144,7 +14270,7 @@ index 547ba2148c..f970402ff0 100644
  #ifdef ARCH_HAS_PREFETCHW
  #define prefetchw_prev_lru_folio(_folio, _base, _field)			\
  	do {								\
-@@ -371,6 +421,74 @@ static inline bool can_reclaim_anon_pages(struct mem_cgroup *memcg,
+@@ -367,6 +417,74 @@ static inline bool can_reclaim_anon_pages(struct mem_cgroup *memcg,
  	return can_demote(nid, sc, memcg);
  }
  
@@ -14219,7 +14345,7 @@ index 547ba2148c..f970402ff0 100644
  /*
   * This misses isolated folios which are not accounted for to save counters.
   * As the data only determines if reclaim or compaction continues, it is
-@@ -383,8 +501,9 @@ unsigned long zone_reclaimable_pages(struct zone *zone)
+@@ -379,8 +497,9 @@ unsigned long zone_reclaimable_pages(struct zone *zone)
  	nr = zone_page_state_snapshot(zone, NR_ZONE_INACTIVE_FILE) +
  		zone_page_state_snapshot(zone, NR_ZONE_ACTIVE_FILE);
  	if (can_reclaim_anon_pages(NULL, zone_to_nid(zone), NULL))
@@ -14231,7 +14357,7 @@ index 547ba2148c..f970402ff0 100644
  
  	return nr;
  }
-@@ -463,6 +582,44 @@ static int reclaimer_offset(struct scan_control *sc)
+@@ -459,6 +578,44 @@ static int reclaimer_offset(struct scan_control *sc)
  	return PGSTEAL_DIRECT - PGSTEAL_KSWAPD;
  }
  
@@ -14276,7 +14402,7 @@ index 547ba2148c..f970402ff0 100644
  /*
   * We detected a synchronous write error writing a folio out.  Probably
   * -ENOSPC.  We need to propagate that into the address_space for a subsequent
-@@ -886,10 +1043,7 @@ static enum folio_references folio_check_references(struct folio *folio,
+@@ -882,10 +1039,7 @@ static enum folio_references folio_check_references(struct folio *folio,
  		return FOLIOREF_ACTIVATE;
  
  	/*
@@ -14288,7 +14414,7 @@ index 547ba2148c..f970402ff0 100644
  	 */
  	if (referenced_ptes == -1)
  		return FOLIOREF_KEEP;
-@@ -903,6 +1057,35 @@ static enum folio_references folio_check_references(struct folio *folio,
+@@ -899,6 +1053,49 @@ static enum folio_references folio_check_references(struct folio *folio,
  
  	referenced_folio = folio_test_clear_referenced(folio);
  
@@ -14308,9 +14434,23 @@ index 547ba2148c..f970402ff0 100644
 +		if (hot_votes >= 2 || referenced_ptes > 1)
 +			return FOLIOREF_ACTIVATE;
 +
++		/*
++		 * 7.3: folio_referenced() reports VMA flags through the typed
++		 * vma_flags_t instead of an unsigned long, and vmscan wraps the
++		 * exec-file test in is_exec_file_folio() -- identical predicate
++		 * to the former "(vm_flags & VM_EXEC) && folio_is_file_lru()".
++		 */
 +		if (referenced_ptes > 0 && is_exec_file_folio(folio, &vma_flags))
 +			return FOLIOREF_ACTIVATE;
 +
++		/*
++		 * 7.3 deleted FOLIOREF_RECLAIM_CLEAN together with the stock
++		 * "reclaim if clean, defer dirty folios to writeback" case that
++		 * produced it; upstream now returns plain FOLIOREF_RECLAIM for
++		 * exactly this class of folio (referenced-once file), and
++		 * shrink_folio_list() has lost the matching keep_locked arm.
++		 * Follow upstream rather than resurrecting the enum value.
++		 */
 +		if (hot_votes == 1 && referenced_folio && folio_is_file_lru(folio))
 +			return FOLIOREF_RECLAIM;
 +
@@ -14324,7 +14464,7 @@ index 547ba2148c..f970402ff0 100644
  	if (referenced_ptes) {
  		/*
  		 * All mapped folios start out with page table
-@@ -1057,9 +1240,13 @@ static bool may_enter_fs(struct folio *folio, gfp_t gfp_mask)
+@@ -1053,9 +1250,13 @@ static bool may_enter_fs(struct folio *folio, gfp_t gfp_mask)
  }
  
  /*
@@ -14340,7 +14480,7 @@ index 547ba2148c..f970402ff0 100644
  		struct pglist_data *pgdat, struct scan_control *sc,
  		struct reclaim_stat *stat, bool ignore_references,
  		struct mem_cgroup *memcg)
-@@ -1914,7 +2101,29 @@ static unsigned int move_folios_to_lru(struct list_head *list)
+@@ -1910,7 +2111,29 @@ static unsigned int move_folios_to_lru(struct list_head *list)
  			continue;
  		}
  
@@ -14371,7 +14511,7 @@ index 547ba2148c..f970402ff0 100644
  		nr_pages = folio_nr_pages(folio);
  		nr_moved += nr_pages;
  		if (folio_test_active(folio))
-@@ -5363,6 +5572,55 @@ static bool drain_evictable(struct lruvec *lruvec)
+@@ -5355,6 +5578,55 @@ static bool drain_evictable(struct lruvec *lruvec)
  	return true;
  }
  
@@ -14427,7 +14567,7 @@ index 547ba2148c..f970402ff0 100644
  static void lru_gen_change_state(bool enabled)
  {
  	static DEFINE_MUTEX(state_mutex);
-@@ -5884,7 +6142,15 @@ void lru_gen_init_lruvec(struct lruvec *lruvec)
+@@ -5876,7 +6148,15 @@ void lru_gen_init_lruvec(struct lruvec *lruvec)
  	struct lru_gen_mm_state *mm_state = get_mm_state(lruvec);
  
  	lrugen->max_seq = MIN_NR_GENS + 1;
@@ -14444,7 +14584,7 @@ index 547ba2148c..f970402ff0 100644
  
  	for (i = 0; i <= MIN_NR_GENS + 1; i++)
  		lrugen->timestamps[i] = jiffies;
-@@ -5984,7 +6250,23 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
+@@ -5976,7 +6256,23 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
  	unsigned long nr_to_reclaim = sc->nr_to_reclaim;
  	bool proportional_reclaim;
  	struct blk_plug plug;
@@ -14468,7 +14608,7 @@ index 547ba2148c..f970402ff0 100644
  	if ((lru_gen_enabled() || lru_gen_switching()) && !root_reclaim(sc)) {
  		lru_gen_shrink_lruvec(lruvec, sc);
  
-@@ -5995,6 +6277,29 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
+@@ -5987,6 +6283,29 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
  
  	get_scan_count(lruvec, sc, nr);
  
@@ -14498,10 +14638,11 @@ index 547ba2148c..f970402ff0 100644
  	/* Record the original scan target for proportional adjustments later */
  	memcpy(targets, nr, sizeof(nr));
  
-@@ -6250,14 +6555,32 @@ static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)
+@@ -6242,14 +6561,32 @@ static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)
  	struct lruvec *target_lruvec;
  	bool reclaimable = false;
  
+-	if ((lru_gen_enabled() || lru_gen_switching()) && root_reclaim(sc)) {
 +#ifdef CONFIG_LRU_MARIE
 +	/*
 +	 * MGLRU's root-reclaim shortcut bypasses shrink_node_memcgs entirely,
@@ -14513,26 +14654,25 @@ index 547ba2148c..f970402ff0 100644
 +	 */
 +	if (!lru_marie_enabled() &&
 +	    (lru_gen_enabled() || lru_gen_switching()) && root_reclaim(sc)) {
-+		memset(&sc->nr, 0, sizeof(sc->nr));
-+		lru_gen_shrink_node(pgdat, sc);
-+
-+		if (!lru_gen_switching())
-+			return;
-+	}
-+#else
- 	if ((lru_gen_enabled() || lru_gen_switching()) && root_reclaim(sc)) {
  		memset(&sc->nr, 0, sizeof(sc->nr));
  		lru_gen_shrink_node(pgdat, sc);
  
  		if (!lru_gen_switching())
  			return;
--
++	}
++#else
++	if ((lru_gen_enabled() || lru_gen_switching()) && root_reclaim(sc)) {
++		memset(&sc->nr, 0, sizeof(sc->nr));
++		lru_gen_shrink_node(pgdat, sc);
+ 
++		if (!lru_gen_switching())
++			return;
  	}
 +#endif
  
  	target_lruvec = mem_cgroup_lruvec(sc->target_mem_cgroup, pgdat);
  
-@@ -6526,6 +6849,17 @@ static void snapshot_refaults(struct mem_cgroup *target_memcg, pg_data_t *pgdat)
+@@ -6518,6 +6855,17 @@ static void snapshot_refaults(struct mem_cgroup *target_memcg, pg_data_t *pgdat)
  	struct lruvec *target_lruvec;
  	unsigned long refaults;
  
@@ -14550,7 +14690,7 @@ index 547ba2148c..f970402ff0 100644
  	if (lru_gen_enabled() && !lru_gen_switching())
  		return;
  
-@@ -6916,6 +7250,21 @@ static void kswapd_age_node(struct pglist_data *pgdat, struct scan_control *sc)
+@@ -6908,6 +7256,21 @@ static void kswapd_age_node(struct pglist_data *pgdat, struct scan_control *sc)
  	struct mem_cgroup *memcg;
  	struct lruvec *lruvec;
  
@@ -14572,7 +14712,7 @@ index 547ba2148c..f970402ff0 100644
  	if (lru_gen_enabled() || lru_gen_switching()) {
  		lru_gen_age_node(pgdat, sc);
  
-@@ -7034,6 +7383,55 @@ static bool pgdat_balanced(pg_data_t *pgdat, int order, int highest_zoneidx)
+@@ -7026,6 +7389,55 @@ static bool pgdat_balanced(pg_data_t *pgdat, int order, int highest_zoneidx)
  	return false;
  }
  
@@ -14628,7 +14768,7 @@ index 547ba2148c..f970402ff0 100644
  /* Clear pgdat state for congested, dirty or under writeback. */
  static void clear_pgdat_congested(pg_data_t *pgdat)
  {
-@@ -7239,6 +7637,34 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int highest_zoneidx)
+@@ -7231,6 +7643,34 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int highest_zoneidx)
  		 * re-evaluate if boosting is required when kswapd next wakes.
  		 */
  		balanced = pgdat_balanced(pgdat, sc.order, highest_zoneidx);
@@ -14663,7 +14803,7 @@ index 547ba2148c..f970402ff0 100644
  		if (!balanced && nr_boost_reclaim) {
  			nr_boost_reclaim = 0;
  			goto restart;
-@@ -7694,6 +8120,9 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
+@@ -7686,6 +8126,9 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
  void __meminit kswapd_run(int nid)
  {
  	pg_data_t *pgdat = NODE_DATA(nid);
@@ -14673,7 +14813,7 @@ index 547ba2148c..f970402ff0 100644
  
  	pgdat_kswapd_lock(pgdat);
  	if (!pgdat->kswapd) {
-@@ -7707,7 +8136,32 @@ void __meminit kswapd_run(int nid)
+@@ -7699,7 +8142,32 @@ void __meminit kswapd_run(int nid)
  		} else {
  			wake_up_process(pgdat->kswapd);
  		}
@@ -14706,7 +14846,7 @@ index 547ba2148c..f970402ff0 100644
  	pgdat_kswapd_unlock(pgdat);
  }
  
-@@ -7726,16 +8180,52 @@ void __meminit kswapd_stop(int nid)
+@@ -7718,16 +8186,52 @@ void __meminit kswapd_stop(int nid)
  		kthread_stop(kswapd);
  		pgdat->kswapd = NULL;
  	}
@@ -14759,6 +14899,19 @@ index 547ba2148c..f970402ff0 100644
  		.extra1		= SYSCTL_ZERO,
  		.extra2		= SYSCTL_TWO_HUNDRED,
  	},
+diff --git a/scripts/setlocalversion b/scripts/setlocalversion
+index 28169d7e14..5cb02894ac 100755
+--- a/scripts/setlocalversion
++++ b/scripts/setlocalversion
+@@ -117,7 +117,7 @@ scm_version()
+ 		# If only the short version is requested, don't bother
+ 		# running further git commands
+ 		if $short; then
+-			echo "+"
++			#echo "+"
+ 			return
+ 		fi
+ 
 -- 
-2.55.0
+2.34.1
 

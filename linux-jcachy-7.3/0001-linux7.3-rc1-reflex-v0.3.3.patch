@@ -1,7 +1,7 @@
-From 632e46ce275ca0707269ce5909f123bc01cad7fb Mon Sep 17 00:00:00 2001
+From b3c713e5115ef50fc7feb7aa478a100899465e5a Mon Sep 17 00:00:00 2001
 From: Masahito S <firelzrd@gmail.com>
-Date: Thu, 20 Aug 2026 00:49:08 +0900
-Subject: [PATCH] linux7.1-reflex-v0.3.3r2
+Date: Mon, 7 Sep 2026 05:57:06 +0900
+Subject: [PATCH] linux7.3-rc1-reflex-v0.3.3
 
 ---
  arch/x86/kernel/cpu/aperfmperf.c |    1 +
@@ -9,13 +9,13 @@ Subject: [PATCH] linux7.1-reflex-v0.3.3r2
  drivers/cpufreq/Kconfig          |   24 +
  drivers/cpufreq/Makefile         |    1 +
  drivers/cpufreq/cpufreq.c        |    3 +
- drivers/cpufreq/cpufreq_reflex.c | 1162 ++++++++++++++++++++++++++++++
+ drivers/cpufreq/cpufreq_reflex.c | 1183 ++++++++++++++++++++++++++++++
  include/linux/sched/cpufreq.h    |   11 +
  kernel/kthread.c                 |    1 +
  kernel/sched/cpufreq.c           |    1 +
- kernel/sched/cpufreq_schedutil.c |   79 ++
+ kernel/sched/cpufreq_schedutil.c |   80 ++
  kernel/time/tick-sched.c         |    1 +
- 11 files changed, 1285 insertions(+)
+ 11 files changed, 1307 insertions(+)
  create mode 100644 drivers/cpufreq/cpufreq_reflex.c
 
 diff --git a/arch/x86/kernel/cpu/aperfmperf.c b/arch/x86/kernel/cpu/aperfmperf.c
@@ -119,10 +119,10 @@ index 0d0df986fa..1fa125b2d9 100644
  static int __target_intermediate(struct cpufreq_policy *policy,
 diff --git a/drivers/cpufreq/cpufreq_reflex.c b/drivers/cpufreq/cpufreq_reflex.c
 new file mode 100644
-index 0000000000..1dfc0218b5
+index 0000000000..1d76646873
 --- /dev/null
 +++ b/drivers/cpufreq/cpufreq_reflex.c
-@@ -0,0 +1,1162 @@
+@@ -0,0 +1,1183 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Reflex CPUFreq governor (based on schedutil)
@@ -355,6 +355,17 @@ index 0000000000..1dfc0218b5
 +}
 +
 +/************************ Governor internals ***********************/
++
++static void rfx_update_rate_limit_us(struct rfx_policy *rfx_pol)
++{
++	/*
++	 * Cast rate_limit_us before multiplication to force 64-bit arithmetic.
++	 * Otherwise, on 32-bit platforms, both operands are converted to
++	 * 32-bit unsigned long and the multiplication may overflow.
++	 */
++	rfx_pol->freq_update_delay_ns =
++		(s64)rfx_pol->tunables->rate_limit_us * NSEC_PER_USEC;
++}
 +
 +static bool rfx_should_update_freq(struct rfx_policy *rfx_pol, u64 time)
 +{
@@ -935,7 +946,7 @@ index 0000000000..1dfc0218b5
 +	tunables->rate_limit_us = rate_limit_us;
 +
 +	list_for_each_entry(rfx_pol, &attr_set->policy_list, tunables_hook)
-+		rfx_pol->freq_update_delay_ns = rate_limit_us * NSEC_PER_USEC;
++		rfx_update_rate_limit_us(rfx_pol);
 +
 +	return count;
 +}
@@ -1186,8 +1197,7 @@ index 0000000000..1dfc0218b5
 +	void (*uu)(struct update_util_data *data, u64 time, unsigned int flags);
 +	unsigned int cpu;
 +
-+	rfx_pol->freq_update_delay_ns =
-+		rfx_pol->tunables->rate_limit_us * NSEC_PER_USEC;
++	rfx_update_rate_limit_us(rfx_pol);
 +	rfx_pol->last_freq_update_time	= 0;
 +	rfx_pol->next_freq		= 0;
 +	rfx_pol->work_in_progress	= false;
@@ -1213,8 +1223,19 @@ index 0000000000..1dfc0218b5
 +		/* Initialize idle-time baseline for hispeed busy% */
 +		rfx_c->prev_idle_time = get_cpu_idle_time(cpu,
 +					&rfx_c->prev_wall_time, 1);
++	}
++
++	/*
++	 * Publish the hooks only after all per-CPU data is initialized, so a
++	 * shared policy's rfx_update_shared() never reads an uninitialized
++	 * sibling rfx_cpu.
++	 */
++	for_each_cpu(cpu, policy->cpus) {
++		struct rfx_cpu *rfx_c = &per_cpu(rfx_cpu, cpu);
++
 +		cpufreq_add_update_util_hook(cpu, &rfx_c->update_util, uu);
 +	}
++
 +	return 0;
 +}
 +
@@ -1330,10 +1351,10 @@ index 742fb9e62e..5abbe2f17b 100644
  }
 +EXPORT_SYMBOL_GPL(cpufreq_this_cpu_can_update);
 diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
-index 49ccd6f1c1..681b4b215a 100644
+index 49ccd6f1c1..a03b7798ae 100644
 --- a/kernel/sched/cpufreq_schedutil.c
 +++ b/kernel/sched/cpufreq_schedutil.c
-@@ -961,3 +961,82 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
+@@ -961,3 +961,83 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
  }
  
  cpufreq_governor_init(schedutil_gov);
@@ -1362,7 +1383,8 @@ index 49ccd6f1c1..681b4b215a 100644
 + * @boost: additional utilization boost (e.g. from IO wait).
 + * @out_util: pointer to store the effective utilization (with DVFS headroom).
 + * @out_bw_min: pointer to store the minimum bandwidth requirement.
-+ * @out_bw_max: pointer to store the maximum bandwidth requirement.
++ * @out_bw_max: pointer to store the maximum (allowed) performance level,
++ *		as required by cpufreq_driver_adjust_perf().
 + */
 +void cpufreq_get_effective_util(int cpu, unsigned long boost,
 +				unsigned long *out_util,
@@ -1429,5 +1451,5 @@ index 6c3fea3867..1a8cb7ca38 100644
  void tick_nohz_idle_restart_tick(void)
  {
 -- 
-2.55.0
+2.34.1
 
