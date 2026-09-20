@@ -46,13 +46,13 @@ Subject: [PATCH] linux7.3-rc1-lru_marie-0.11.1
  mm/oom_kill.c                  |  365 ++++++
  mm/page_alloc.c                |  120 +-
  mm/page_alloc.h                |   24 +
- mm/page_io.c                   |  270 ++++-
+ mm/page_io.c                   |  277 ++++-
  mm/page_isolation.c            |   31 +-
  mm/rmap.c                      |    6 +
  mm/swap.h                      |    4 +
  mm/vmscan.c                    |  526 ++++++++-
  scripts/setlocalversion        |    2 +-
- 48 files changed, 13818 insertions(+), 36 deletions(-)
+ 48 files changed, 13825 insertions(+), 36 deletions(-)
  create mode 100644 include/linux/lru_marie.h
  create mode 100644 mm/lru_marie/Makefile
  create mode 100644 mm/lru_marie/account.h
@@ -13813,7 +13813,7 @@ index 88962571cb..7ae048a45f 100644
  int generic_swapfile_activate(struct swap_info_struct *sis,
  				struct file *swap_file,
  				sector_t *span)
-@@ -197,6 +212,155 @@ static void swap_zeromap_folio_clear(struct folio *folio)
+@@ -197,6 +212,162 @@ static void swap_zeromap_folio_clear(struct folio *folio)
  	swap_cluster_unlock(ci);
  }
  
@@ -13825,11 +13825,18 @@ index 88962571cb..7ae048a45f 100644
 + * This function writes the folio to swap space, either using zswap or
 + * the block/fs swap writeback path. It ensures that the folio is
 + * unlocked and the reference count is decremented after the operation.
++ *
++ * xswap devices have no bdev or swap extents to write to, so a zswap
++ * rejection leaves the folio dirty in the swap cache for reclaim to retry.
 + */
 +static inline void do_swapout(struct swap_io_ctx *ctx, struct folio *folio)
 +{
 +	if (zswap_store(folio)) {
 +		count_mthp_stat(folio_order(folio), MTHP_STAT_ZSWPOUT);
++		folio_unlock(folio);
++	} else if (unlikely(data_race(__swap_entry_to_info(folio->swap)->flags &
++				      SWP_XSWAP))) {
++		folio_mark_dirty(folio);
 +		folio_unlock(folio);
 +	} else
 +		__swap_writepage(ctx, folio); /* Implies folio_unlock(folio) */
@@ -13969,7 +13976,7 @@ index 88962571cb..7ae048a45f 100644
  /*
   * We may have stale swap cache pages in memory: notice
   * them here and get rid of the unnecessary final write.
-@@ -235,6 +399,14 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
+@@ -235,6 +406,14 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
  	 */
  	swap_zeromap_folio_clear(folio);
  
@@ -13984,7 +13991,7 @@ index 88962571cb..7ae048a45f 100644
  	if (zswap_store(folio)) {
  		count_mthp_stat(folio_order(folio), MTHP_STAT_ZSWPOUT);
  		goto out_unlock;
-@@ -255,6 +427,64 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
+@@ -255,6 +434,64 @@ int swap_writeout(struct swap_io_ctx *ctx, struct folio *folio)
  	return ret;
  }
  
@@ -14049,7 +14056,7 @@ index 88962571cb..7ae048a45f 100644
  #if defined(CONFIG_MEMCG) && defined(CONFIG_BLK_CGROUP)
  static struct cgroup_subsys_state *folio_memcg_blkg_css(struct folio *folio)
  {
-@@ -329,6 +559,18 @@ static bool swap_can_merge(struct swap_io_ctx *ctx, struct folio *folio,
+@@ -329,6 +566,18 @@ static bool swap_can_merge(struct swap_io_ctx *ctx, struct folio *folio,
  	return sis->ops->can_merge(folio, prev_folio, prev_folio_size, rw);
  }
  
@@ -14068,7 +14075,7 @@ index 88962571cb..7ae048a45f 100644
  static void swap_add_folio(struct swap_io_ctx *ctx, struct folio *folio, int rw)
  {
  	struct swap_info_struct *sis = __swap_entry_to_info(folio->swap);
-@@ -359,7 +601,8 @@ static void swap_add_folio(struct swap_io_ctx *ctx, struct folio *folio, int rw)
+@@ -359,7 +608,8 @@ static void swap_add_folio(struct swap_io_ctx *ctx, struct folio *folio, int rw)
  	 * reclaim path beneficial.
  	 */
  	if (++sio->nr_bvecs == ARRAY_SIZE(sio->bvecs) ||
@@ -14078,7 +14085,7 @@ index 88962571cb..7ae048a45f 100644
  		if (rw == WRITE)
  			swap_write_submit(ctx);
  		else
-@@ -534,10 +777,33 @@ static void end_swap_bio_write(struct bio *bio)
+@@ -534,10 +784,33 @@ static void end_swap_bio_write(struct bio *bio)
  	struct swap_iocb *sio = container_of(bio, struct swap_iocb, bio);
  	bool failed = !!bio->bi_status;
  
