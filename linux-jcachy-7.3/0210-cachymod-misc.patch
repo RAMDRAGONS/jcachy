@@ -114,7 +114,7 @@ diff --git a/block/mq-deadline.c b/block/mq-deadline.c
 index 185ce8b8c56d..7ae1f38fc964 100644
 --- a/block/mq-deadline.c
 +++ b/block/mq-deadline.c
-@@ -549,7 +549,7 @@ static int dd_init_sched(struct request_queue *q, struct elevator_queue *eq)
+@@ -546,7 +546,7 @@ static int dd_init_sched(struct request_queue *q, struct elevator_queue *eq)
  	dd->fifo_expire[DD_READ] = read_expire;
  	dd->fifo_expire[DD_WRITE] = write_expire;
  	dd->writes_starved = writes_starved;
@@ -140,7 +140,7 @@ diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
 index 72e34acd439c..475e3dba80c1 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
-@@ -684,7 +684,8 @@ enum {
+@@ -682,7 +682,8 @@ enum {
  	QUEUE_FLAG_MAX
  };
  
@@ -266,7 +266,7 @@ diff --git a/drivers/md/dm-crypt.c b/drivers/md/dm-crypt.c
 index 79704fbc523b..2ccc40954c4c 100644
 --- a/drivers/md/dm-crypt.c
 +++ b/drivers/md/dm-crypt.c
-@@ -3226,6 +3226,9 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
+@@ -3225,6 +3225,9 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
  			goto bad;
  	}
  
@@ -352,7 +352,7 @@ diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
 index adec44313772b..1c9db9a246f71 100644
 --- a/net/ipv4/tcp_input.c
 +++ b/net/ipv4/tcp_input.c
-@@ -5382,11 +5382,25 @@ static void tcp_ofo_queue(struct sock *sk)
+@@ -5354,11 +5354,25 @@ static void tcp_ofo_queue(struct sock *sk)
  static bool tcp_prune_ofo_queue(struct sock *sk, const struct sk_buff *in_skb);
  static int tcp_prune_queue(struct sock *sk, const struct sk_buff *in_skb);
  
@@ -408,7 +408,7 @@ diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
 index 3ebec186f982..3a21ceefcadf 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -15331,6 +15331,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+@@ -15430,6 +15430,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
  
@@ -424,7 +424,7 @@ index 3ebec186f982..3a21ceefcadf 100644
  static void switched_to_fair(struct rq *rq, struct task_struct *p)
  {
  	WARN_ON_ONCE(p->se.sched_delayed);
-@@ -15710,6 +15719,7 @@ DEFINE_SCHED_CLASS(fair) = {
+@@ -15807,6 +15816,7 @@ DEFINE_SCHED_CLASS(fair) = {
  	.prio_changed		= prio_changed_fair,
  	.switching_from		= switching_from_fair,
  	.switched_from		= switched_from_fair,
@@ -450,41 +450,74 @@ diff -uarp a/fs/ntfs3/run.c b/fs/ntfs3/run.c
 +	size_t index = 0, done;
  	bool ok, zone;
  	struct wnd_bitmap *wnd;
-
+ 
 -- 
 2.53.0
 
-x86/fred: Reconstruct the #GP context for rejected INT instructions
-https://lore.kernel.org/all/20260917230907.2080792-2-matthew.schwartz@linux.dev/
+From Stefan Kerkmann
+https://lore.kernel.org/all/47f8c30b-e326-4ff0-a2bc-5683209a9e2d@pengutronix.de/
 
-diff --git a/arch/x86/entry/entry_fred.c b/arch/x86/entry/entry_fred.c
-index fb3594ddf731..854899bfec5d 100644
---- a/arch/x86/entry/entry_fred.c
-+++ b/arch/x86/entry/entry_fred.c
-@@ -10,6 +10,7 @@
- #include <asm/desc.h>
- #include <asm/fred.h>
- #include <asm/idtentry.h>
-+#include <asm/processor-flags.h>
- #include <asm/syscall.h>
- #include <asm/trapnr.h>
- #include <asm/traps.h>
-@@ -71,7 +72,15 @@ static noinstr void fred_intx(struct pt_regs *regs)
- #endif
+commit a339671db64b ("vdso: Switch get/put_unaligned() from packed struct to
+memcpy()"), which landed in 7.0, causes a performance regression on an NXP
+i.MX25 (ARMv5TE) SoC.
+
+Revert vdso: Switch get/put_unaligned() from packed struct to memcpy()
+https://github.com/CachyOS/linux/commit/a339671db64b
+
+diff --git a/include/vdso/unaligned.h b/include/vdso/unaligned.h
+index ff0c06b6513eff..9076483c9fbbd0 100644
+--- a/include/vdso/unaligned.h
++++ b/include/vdso/unaligned.h
+@@ -2,43 +2,14 @@
+ #ifndef __VDSO_UNALIGNED_H
+ #define __VDSO_UNALIGNED_H
  
- 	default:
--		return exc_general_protection(regs, 0);
-+		/*
-+		 * Reconstruct the #GP fault state that IDT delivery would produce.
-+		 * Clear the software event flag so ERETU with TF set does not trap
-+		 * before the resumed instruction. See prevent_single_step_upon_eretu().
-+		 */
-+		regs->ip -= regs->fred_ss.insnlen;
-+		regs->flags |= X86_EFLAGS_RF;
-+		regs->fred_ss.swevent = 0;
-+		return exc_general_protection(regs, (regs->fred_ss.vector << 3) | 2);
- 	}
- }
+-#include <linux/compiler_types.h>
+-
+-/**
+- * __get_unaligned_t - read an unaligned value from memory.
+- * @type:	the type to load from the pointer.
+- * @ptr:	the pointer to load from.
+- *
+- * Use memcpy to affect an unaligned type sized load avoiding undefined behavior
+- * from approaches like type punning that require -fno-strict-aliasing in order
+- * to be correct. As type may be const, use __unqual_scalar_typeof to map to a
+- * non-const type - you can't memcpy into a const type. The
+- * __get_unaligned_ctrl_type gives __unqual_scalar_typeof its required
+- * expression rather than type, a pointer is used to avoid warnings about mixing
+- * the use of 0 and NULL. The void* cast silences ubsan warnings.
+- */
+-#define __get_unaligned_t(type, ptr) ({					\
+-	type *__get_unaligned_ctrl_type __always_unused = NULL;		\
+-	__unqual_scalar_typeof(*__get_unaligned_ctrl_type) __get_unaligned_val; \
+-	__builtin_memcpy(&__get_unaligned_val, (void *)(ptr),		\
+-			 sizeof(__get_unaligned_val));			\
+-	__get_unaligned_val;						\
++#define __get_unaligned_t(type, ptr) ({							\
++	const struct { type x; } __packed * __get_pptr = (typeof(__get_pptr))(ptr);	\
++	__get_pptr->x;									\
+ })
  
+-/**
+- * __put_unaligned_t - write an unaligned value to memory.
+- * @type:	the type of the value to store.
+- * @val:	the value to store.
+- * @ptr:	the pointer to store to.
+- *
+- * Use memcpy to affect an unaligned type sized store avoiding undefined
+- * behavior from approaches like type punning that require -fno-strict-aliasing
+- * in order to be correct. The void* cast silences ubsan warnings.
+- */
+-#define __put_unaligned_t(type, val, ptr) do {				\
+-	type __put_unaligned_val = (val);				\
+-	__builtin_memcpy((void *)(ptr), &__put_unaligned_val,		\
+-			 sizeof(__put_unaligned_val));			\
++#define __put_unaligned_t(type, val, ptr) do {						\
++	struct { type x; } __packed * __put_pptr = (typeof(__put_pptr))(ptr);		\
++	__put_pptr->x = (val);								\
+ } while (0)
+ 
+ #endif /* __VDSO_UNALIGNED_H */
 -- 
 2.55.0
+

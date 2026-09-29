@@ -12,13 +12,14 @@ diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
 index 29a9b30a41..ec3cd0582b 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -10479,6 +10479,9 @@ enum migration_type {
+@@ -10671,7 +10671,10 @@ enum migration_type {
  #define LBF_SOME_PINNED	0x08
  #define LBF_ACTIVE_LB	0x10
  #define LBF_LLC_PINNED	0x20
+ #define LBF_ACTIVE_LB_LLC	0x40
 +/* This balance operation has detached at least one task. Sticky across the
 + * more_balance retries, so it reflects the whole operation, not one scan. */
-+#define LBF_MOVED	0x40
++#define LBF_MOVED	0x80
  
  struct lb_env {
  	struct sched_domain	*sd;
