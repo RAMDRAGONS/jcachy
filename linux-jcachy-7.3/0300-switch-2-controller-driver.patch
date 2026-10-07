@@ -1,7 +1,7 @@
-From c293d90a672e7748c15594930ced214a4b194269 Mon Sep 17 00:00:00 2001
+From 4d67a45e4b4494bdfb75b55e249f3512758d6630 Mon Sep 17 00:00:00 2001
 From: Vicki Pfau <vi@endrift.com>
-Date: Tue, 11 Aug 2026 18:20:33 -0700
-Subject: [PATCH 1/3] HID: nintendo: Add preliminary Switch 2 controller driver
+Date: Mon, 5 Oct 2026 23:16:07 -0700
+Subject: [PATCH 1/4] HID: nintendo: Add preliminary Switch 2 controller driver
 
 This adds a new driver for the Switch 2 controllers. The Switch 2 uses an
 unusual split-interface design such that input and rumble occur on the main
@@ -25,23 +25,22 @@ Reviewed-by: Silvan Jegen <s.jegen@gmail.com>
 Tested-by: Silvan Jegen <s.jegen@gmail.com>
 Signed-off-by: Vicki Pfau <vi@endrift.com>
 ---
- MAINTAINERS                                   |    1 +
- drivers/hid/Kconfig                           |   11 +-
- drivers/hid/hid-ids.h                         |    4 +
- drivers/hid/hid-nintendo.c                    | 1277 ++++++++++++++++-
- drivers/hid/hid-nintendo.h                    |   72 +
- drivers/input/joystick/Kconfig                |   11 +
- drivers/input/joystick/Makefile               |    1 +
- drivers/input/joystick/nintendo-switch2-usb.c |  475 ++++++
- 8 files changed, 1842 insertions(+), 10 deletions(-)
+ MAINTAINERS                            |    1 +
+ drivers/hid/Kconfig                    |   22 +-
+ drivers/hid/Makefile                   |    1 +
+ drivers/hid/hid-ids.h                  |    4 +
+ drivers/hid/hid-nintendo-switch2-usb.c |  493 +++++++++
+ drivers/hid/hid-nintendo.c             | 1280 +++++++++++++++++++++++-
+ drivers/hid/hid-nintendo.h             |   73 ++
+ 7 files changed, 1864 insertions(+), 10 deletions(-)
+ create mode 100644 drivers/hid/hid-nintendo-switch2-usb.c
  create mode 100644 drivers/hid/hid-nintendo.h
- create mode 100644 drivers/input/joystick/nintendo-switch2-usb.c
 
 diff --git a/MAINTAINERS b/MAINTAINERS
-index 3a19da74d0..d783157299 100644
+index e0582539fb..794c12c277 100644
 --- a/MAINTAINERS
 +++ b/MAINTAINERS
-@@ -19370,6 +19370,7 @@ F:	drivers/scsi/nsp32*
+@@ -19383,6 +19383,7 @@ F:	drivers/scsi/nsp32*
  
  NINTENDO HID DRIVER
  M:	Daniel J. Ogorchock <djogorchock@gmail.com>
@@ -50,7 +49,7 @@ index 3a19da74d0..d783157299 100644
  S:	Maintained
  F:	drivers/hid/hid-nintendo*
 diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
-index aa7fa11a01..16203f2cee 100644
+index c43e824428..4ca3529419 100644
 --- a/drivers/hid/Kconfig
 +++ b/drivers/hid/Kconfig
 @@ -869,10 +869,13 @@ config HID_NINTENDO
@@ -71,11 +70,41 @@ index aa7fa11a01..16203f2cee 100644
  
  	To compile this driver as a module, choose M here: the
  	module will be called hid-nintendo.
+@@ -887,6 +890,17 @@ config NINTENDO_FF
+ 	controller, and the NSO N64 controller. For the pro controller, both
+ 	rumble motors can be controlled individually.
+ 
++config NINTENDO_SWITCH2_USB
++	tristate "Wired Nintendo Switch 2 controller support"
++	depends on HID_NINTENDO
++	depends on USB
++	help
++	Say Y here if you want to enable support for wired Nintendo Switch 2
++	controllers.
++
++	To compile this driver as a module, choose M here: the
++	module will be called hid-nintendo-switch2-usb.
++
+ config HID_NTI
+ 	tristate "NTI keyboard adapters"
+ 	help
+diff --git a/drivers/hid/Makefile b/drivers/hid/Makefile
+index 48a863b245..35b2f86a26 100644
+--- a/drivers/hid/Makefile
++++ b/drivers/hid/Makefile
+@@ -96,6 +96,7 @@ obj-$(CONFIG_HID_MONTEREY)	+= hid-monterey.o
+ obj-$(CONFIG_HID_MSI)		+= hid-msi.o
+ obj-$(CONFIG_HID_MULTITOUCH)	+= hid-multitouch.o
+ obj-$(CONFIG_HID_NINTENDO)	+= hid-nintendo.o
++obj-$(CONFIG_NINTENDO_SWITCH2_USB)	+= hid-nintendo-switch2-usb.o
+ obj-$(CONFIG_HID_NTI)			+= hid-nti.o
+ obj-$(CONFIG_HID_NTRIG)		+= hid-ntrig.o
+ obj-$(CONFIG_HID_NVIDIA_SHIELD)	+= hid-nvidia-shield.o
 diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
-index 341bf58786..a5bbcde638 100644
+index cb7f16d75f..89eeca1434 100644
 --- a/drivers/hid/hid-ids.h
 +++ b/drivers/hid/hid-ids.h
-@@ -1115,6 +1115,10 @@
+@@ -1118,6 +1118,10 @@
  #define USB_DEVICE_ID_NINTENDO_SNESCON	0x2017
  #define USB_DEVICE_ID_NINTENDO_GENCON	0x201e
  #define USB_DEVICE_ID_NINTENDO_N64CON	0x2019
@@ -86,8 +115,507 @@ index 341bf58786..a5bbcde638 100644
  
  #define USB_VENDOR_ID_NOVATEK		0x0603
  #define USB_DEVICE_ID_NOVATEK_PCT	0x0600
+diff --git a/drivers/hid/hid-nintendo-switch2-usb.c b/drivers/hid/hid-nintendo-switch2-usb.c
+new file mode 100644
+index 0000000000..8b3b684103
+--- /dev/null
++++ b/drivers/hid/hid-nintendo-switch2-usb.c
+@@ -0,0 +1,493 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * USB driver for Nintendo Switch 2 controllers configuration interface
++ *
++ * Copyright (c) 2025 Valve Software
++ *
++ * This driver is based on the following work:
++ *   https://gist.github.com/shinyquagsire23/66f006b46c56216acbaac6c1e2279b64
++ *   https://github.com/ndeadly/switch2_controller_research
++ */
++
++#include "hid-ids.h"
++#include "hid-nintendo.h"
++#include <linux/module.h>
++#include <linux/usb/input.h>
++
++#define NS2_BULK_SIZE 64
++#define NS2_IN_URBS 2
++#define NS2_OUT_URBS 4
++
++static struct usb_driver switch2_usb;
++
++enum switch2_urb_state {
++	NS2_URB_FREE,
++	NS2_URB_OUT,
++	NS2_URB_IN,
++};
++
++struct switch2_urb {
++	struct urb *urb;
++	uint8_t *data;
++	enum switch2_urb_state state;
++};
++
++struct switch2_usb {
++	struct switch2_cfg_intf cfg;
++	struct usb_device *udev;
++
++	struct switch2_urb bulk_in[NS2_IN_URBS];
++	struct usb_anchor bulk_in_anchor;
++	bool shutdown;
++	spinlock_t bulk_in_lock;
++
++	struct switch2_urb bulk_out[NS2_OUT_URBS];
++	struct usb_anchor bulk_out_anchor;
++	spinlock_t bulk_out_lock;
++
++	struct work_struct message_in_work;
++};
++
++static void switch2_bulk_in(struct urb *urb)
++{
++	struct switch2_usb *ns2_usb = urb->context;
++	int i;
++	bool schedule = false;
++	unsigned long flags;
++
++	switch (urb->status) {
++	case 0:
++		schedule = true;
++		break;
++	case -ECONNRESET:
++	case -ENOENT:
++	case -ESHUTDOWN:
++	case -EPIPE:
++		dev_dbg(&ns2_usb->udev->dev, "shutting down input urb: %d\n", urb->status);
++		return;
++	default:
++		dev_dbg(&ns2_usb->udev->dev, "unknown input urb status: %d\n", urb->status);
++		break;
++	}
++
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	if (ns2_usb->shutdown)
++		schedule = false;
++
++	for (i = 0; i < NS2_IN_URBS; i++) {
++		int err;
++		struct switch2_urb *ns2_urb;
++
++		if (ns2_usb->bulk_in[i].urb == urb) {
++			if (schedule) {
++				ns2_usb->bulk_in[i].state = NS2_URB_IN;
++				continue;
++			} else {
++				ns2_usb->bulk_in[i].state = NS2_URB_FREE;
++			}
++		}
++
++		if (ns2_usb->bulk_in[i].state != NS2_URB_FREE)
++			continue;
++
++		if (ns2_usb->shutdown)
++			continue;
++
++		/*
++		 * We want exactly one bulk in URB scheduled at a time, so only
++		 * reschedule this immediately if nothing else is scheduled
++		 * currently.
++		 */
++		if (!usb_anchor_empty(&ns2_usb->bulk_in_anchor))
++			continue;
++
++		ns2_urb = &ns2_usb->bulk_in[i];
++		if (!ns2_urb)
++			continue;
++
++		usb_anchor_urb(ns2_urb->urb, &ns2_usb->bulk_in_anchor);
++		err = usb_submit_urb(ns2_urb->urb, GFP_ATOMIC);
++		if (err) {
++			usb_unanchor_urb(ns2_urb->urb);
++			dev_dbg(&ns2_usb->udev->dev, "failed to queue input urb: %d\n", err);
++		} else {
++			ns2_urb->state = NS2_URB_OUT;
++		}
++	}
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++	if (schedule)
++		schedule_work(&ns2_usb->message_in_work);
++}
++
++static void switch2_bulk_out(struct urb *urb)
++{
++	struct switch2_usb *ns2_usb = urb->context;
++	int i;
++
++	guard(spinlock_irqsave)(&ns2_usb->bulk_out_lock);
++
++	switch (urb->status) {
++	case 0:
++		break;
++	case -ECONNRESET:
++	case -ENOENT:
++	case -ESHUTDOWN:
++		dev_dbg(&ns2_usb->udev->dev, "shutting down output urb: %d\n", urb->status);
++		return;
++	case -EPIPE:
++		break;
++	default:
++		dev_dbg(&ns2_usb->udev->dev, "unknown output urb status: %d\n", urb->status);
++		break;
++	}
++
++	for (i = 0; i < NS2_OUT_URBS; i++) {
++		if (ns2_usb->bulk_out[i].urb != urb)
++			continue;
++
++		ns2_usb->bulk_out[i].state = NS2_URB_FREE;
++		break;
++	}
++}
++
++static int switch2_usb_send_cmd(enum switch2_cmd command, uint8_t subcommand,
++	const void *message, size_t size, struct switch2_cfg_intf *cfg)
++{
++	struct switch2_usb *ns2_usb = (struct switch2_usb *)cfg;
++	struct switch2_urb *urb = NULL;
++	int i;
++	int ret;
++	unsigned long flags;
++
++	struct switch2_cmd_header header = {
++		command, NS2_DIR_OUT | NS2_FLAG_OK, NS2_TRANS_USB, subcommand, 0, size
++	};
++
++	if (WARN_ON(size > 56))
++		return -EINVAL;
++
++	spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
++	for (i = 0; i < NS2_OUT_URBS; i++) {
++		if (ns2_usb->bulk_out[i].state != NS2_URB_FREE)
++			continue;
++
++		urb = &ns2_usb->bulk_out[i];
++		urb->state = NS2_URB_OUT;
++		break;
++	}
++	spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++
++	if (!urb) {
++		dev_warn(&ns2_usb->udev->dev, "output queue full, dropping message\n");
++		return -ENOBUFS;
++	}
++
++	memcpy(urb->data, &header, sizeof(header));
++	if (message && size)
++		memcpy(&urb->data[8], message, size);
++	urb->urb->transfer_buffer_length = size + sizeof(header);
++
++	print_hex_dump_debug("sending cmd: ", DUMP_PREFIX_OFFSET, 16, 1, urb->data,
++		size + sizeof(header), false);
++
++	usb_anchor_urb(urb->urb, &ns2_usb->bulk_out_anchor);
++	ret = usb_submit_urb(urb->urb, GFP_KERNEL);
++	if (ret) {
++		if (ret != -ENODEV)
++			dev_warn(&ns2_usb->udev->dev, "failed to submit output urb: %i", ret);
++		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
++		urb->state = NS2_URB_FREE;
++		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++		usb_unanchor_urb(urb->urb);
++		return ret;
++	}
++
++	return 0;
++}
++
++static void switch2_usb_free_in_urbs(struct switch2_usb *ns2_usb)
++{
++	struct urb *urb;
++	uint8_t *data;
++	int i;
++	unsigned long flags;
++
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	ns2_usb->shutdown = true;
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++	cancel_work_sync(&ns2_usb->message_in_work);
++
++	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
++	for (i = 0; i < NS2_IN_URBS; i++) {
++		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++		urb = ns2_usb->bulk_in[i].urb;
++		data = ns2_usb->bulk_in[i].data;
++		if (!urb) {
++			spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++			continue;
++		}
++
++		ns2_usb->bulk_in[i].urb = NULL;
++		ns2_usb->bulk_in[i].data = NULL;
++		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++		usb_kill_urb(urb);
++		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
++		usb_free_urb(urb);
++	}
++}
++
++static void switch2_usb_free_out_urbs(struct switch2_usb *ns2_usb)
++{
++	struct urb *urb;
++	uint8_t *data;
++	int i;
++	unsigned long flags;
++
++	usb_kill_anchored_urbs(&ns2_usb->bulk_out_anchor);
++	for (i = 0; i < NS2_OUT_URBS; i++) {
++		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
++		urb = ns2_usb->bulk_out[i].urb;
++		data = ns2_usb->bulk_out[i].data;
++		if (!urb) {
++			spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++			continue;
++		}
++
++		ns2_usb->bulk_out[i].urb = NULL;
++		ns2_usb->bulk_out[i].data = NULL;
++		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++
++		usb_kill_urb(urb);
++		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
++		usb_free_urb(urb);
++	}
++}
++
++static void switch2_usb_shutdown(struct switch2_cfg_intf *intf)
++{
++	struct switch2_usb *ns2_usb = (struct switch2_usb *)intf;
++	int i;
++	unsigned long flags;
++
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	ns2_usb->shutdown = true;
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++	cancel_work_sync(&ns2_usb->message_in_work);
++
++	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	for (i = 0; i < NS2_IN_URBS; i++)
++		ns2_usb->bulk_in[i].state = NS2_URB_FREE;
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++}
++
++static void switch2_usb_message_in_work(struct work_struct *work)
++{
++	struct switch2_usb *ns2_usb = container_of(work, struct switch2_usb, message_in_work);
++	struct switch2_urb *urb;
++	int err;
++	int i;
++	unsigned long flags;
++
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	for (i = 0; i < NS2_IN_URBS; i++) {
++		urb = &ns2_usb->bulk_in[i];
++		if (urb->state != NS2_URB_IN)
++			continue;
++		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++		if (ns2_usb->cfg.parent) {
++			err = switch2_receive_command(ns2_usb->cfg.parent,
++				urb->urb->transfer_buffer, urb->urb->actual_length);
++			if (err)
++				dev_dbg(&ns2_usb->udev->dev, "receive command failed: %d\n", err);
++		} else {
++			dev_err(&ns2_usb->udev->dev,
++				"Got message before controller is fully set up; discarding\n");
++		}
++
++		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++		if (!urb->urb)
++			/* We're shutting down and this URB was freed */
++			break;
++
++		urb->state = NS2_URB_FREE;
++		/*
++		 * We want exactly one bulk in URB scheduled at a time, so only
++		 * reschedule this immediately if nothing else is scheduled
++		 * currently.
++		 */
++		if (!usb_anchor_empty(&ns2_usb->bulk_in_anchor))
++			continue;
++
++		usb_anchor_urb(urb->urb, &ns2_usb->bulk_in_anchor);
++		err = usb_submit_urb(urb->urb, GFP_ATOMIC);
++		if (err) {
++			usb_unanchor_urb(urb->urb);
++			dev_dbg(&ns2_usb->udev->dev,
++				"failed to queue input urb: %d\n", err);
++		} else {
++			urb->state = NS2_URB_OUT;
++		}
++	}
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++}
++
++static int switch2_usb_probe(struct usb_interface *intf, const struct usb_device_id *id)
++{
++	struct switch2_usb *ns2_usb;
++	struct usb_device *udev;
++	struct usb_endpoint_descriptor *bulk_in, *bulk_out;
++	struct urb *urb;
++	uint8_t *data;
++	char phys[64];
++	int ret;
++	int i;
++	unsigned long flags;
++
++	udev = interface_to_usbdev(intf);
++	if (usb_make_path(udev, phys, sizeof(phys)) < 0)
++		return -EINVAL;
++
++	ret = usb_find_common_endpoints(intf->cur_altsetting, &bulk_in, &bulk_out, NULL, NULL);
++	if (ret) {
++		dev_err(&intf->dev, "failed to find bulk EPs\n");
++		return ret;
++	}
++
++	ns2_usb = devm_kzalloc(&intf->dev, sizeof(*ns2_usb), GFP_KERNEL);
++	if (!ns2_usb)
++		return -ENOMEM;
++
++	init_usb_anchor(&ns2_usb->bulk_out_anchor);
++	spin_lock_init(&ns2_usb->bulk_out_lock);
++	init_usb_anchor(&ns2_usb->bulk_in_anchor);
++	spin_lock_init(&ns2_usb->bulk_in_lock);
++	INIT_WORK(&ns2_usb->message_in_work, switch2_usb_message_in_work);
++
++	ns2_usb->udev = udev;
++	for (i = 0; i < NS2_IN_URBS; i++) {
++		urb = usb_alloc_urb(0, GFP_KERNEL);
++		if (!urb) {
++			ret = -ENOMEM;
++			goto err_free_in;
++		}
++
++		data = usb_alloc_coherent(udev, NS2_BULK_SIZE, GFP_KERNEL,
++			&urb->transfer_dma);
++		if (!data) {
++			usb_free_urb(urb);
++			ret = -ENOMEM;
++			goto err_free_in;
++		}
++
++		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++		usb_fill_bulk_urb(urb, udev,
++			usb_rcvbulkpipe(udev, bulk_in->bEndpointAddress),
++			data, NS2_BULK_SIZE, switch2_bulk_in, ns2_usb);
++		urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
++
++		ns2_usb->bulk_in[i].urb = urb;
++		ns2_usb->bulk_in[i].data = data;
++		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++	}
++
++	for (i = 0; i < NS2_OUT_URBS; i++) {
++		urb = usb_alloc_urb(0, GFP_KERNEL);
++		if (!urb) {
++			ret = -ENOMEM;
++			goto err_free_out;
++		}
++
++		data = usb_alloc_coherent(udev, NS2_BULK_SIZE, GFP_KERNEL,
++			&urb->transfer_dma);
++		if (!data) {
++			usb_free_urb(urb);
++			ret = -ENOMEM;
++			goto err_free_out;
++		}
++
++		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
++		usb_fill_bulk_urb(urb, udev,
++			usb_sndbulkpipe(udev, bulk_out->bEndpointAddress),
++			data, NS2_BULK_SIZE, switch2_bulk_out, ns2_usb);
++		urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
++
++		ns2_usb->bulk_out[i].urb = urb;
++		ns2_usb->bulk_out[i].data = data;
++		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
++	}
++
++	usb_set_intfdata(intf, ns2_usb);
++
++	ns2_usb->cfg.dev = &ns2_usb->udev->dev;
++	ns2_usb->cfg.send_command = switch2_usb_send_cmd;
++
++	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
++	ns2_usb->bulk_in[0].state = NS2_URB_OUT;
++	usb_anchor_urb(ns2_usb->bulk_in[0].urb, &ns2_usb->bulk_in_anchor);
++	ret = usb_submit_urb(ns2_usb->bulk_in[0].urb, GFP_ATOMIC);
++	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
++
++	if (ret < 0)
++		goto err_free_out;
++
++	ns2_usb->cfg.shutdown = switch2_usb_shutdown;
++	ret = switch2_controller_attach_cfg(phys, &ns2_usb->cfg);
++	if (ret < 0)
++		goto err_free_out;
++
++	return 0;
++
++err_free_out:
++	switch2_usb_free_out_urbs(ns2_usb);
++err_free_in:
++	switch2_usb_free_in_urbs(ns2_usb);
++	devm_kfree(&intf->dev, ns2_usb);
++
++	return ret;
++}
++
++static void switch2_usb_disconnect(struct usb_interface *intf)
++{
++	struct switch2_usb *ns2_usb = usb_get_intfdata(intf);
++
++	switch2_usb_free_in_urbs(ns2_usb);
++
++	/*
++	 * We need to detach *before* we kill the out URBs to make sure no
++	 * further URBs get scheduled by the HID endpoint in the meantime.
++	 */
++	if (ns2_usb->cfg.parent)
++		switch2_controller_detach_cfg(ns2_usb->cfg.parent);
++
++	switch2_usb_free_out_urbs(ns2_usb);
++}
++
++#define SWITCH2_CONTROLLER(vend, prod) \
++	USB_DEVICE_AND_INTERFACE_INFO(vend, prod, USB_CLASS_VENDOR_SPEC, 0, 0)
++
++static const struct usb_device_id switch2_usb_devices[] = {
++	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_JOYCONL) },
++	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_JOYCONR) },
++	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_PROCON) },
++	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_GCCON) },
++	{ }
++};
++MODULE_DEVICE_TABLE(usb, switch2_usb_devices);
++
++static struct usb_driver switch2_usb = {
++	.name		= "nintendo-switch2",
++	.id_table	= switch2_usb_devices,
++	.probe		= switch2_usb_probe,
++	.disconnect	= switch2_usb_disconnect,
++};
++module_usb_driver(switch2_usb);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Vicki Pfau <vi@endrift.com>");
++MODULE_DESCRIPTION("Driver for Nintendo Switch 2 Controllers");
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index 43e0f2aaea..0198e2e645 100644
+index 43e0f2aaea..9e16be7e33 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
 @@ -1,11 +1,13 @@
@@ -176,7 +704,7 @@ index 43e0f2aaea..0198e2e645 100644
  {
  	struct joycon_ctlr *ctlr = hid_get_drvdata(hdev);
  
-@@ -2880,7 +2887,1207 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
+@@ -2880,7 +2887,1210 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
  	return 0;
  }
  
@@ -502,7 +1030,7 @@ index 43e0f2aaea..0198e2e645 100644
 +				return ns2;
 +		}
 +	}
-+	ns2 = kzalloc(sizeof(*ns2), GFP_KERNEL);
++	ns2 = kzalloc_obj(*ns2);
 +	if (!ns2)
 +		return ERR_PTR(-ENOMEM);
 +
@@ -685,7 +1213,6 @@ index 43e0f2aaea..0198e2e645 100644
 +
 +	ns2->leds = devm_kcalloc(&input->dev, JC_NUM_LEDS, sizeof(*ns2->leds), GFP_KERNEL);
 +	if (!ns2->leds) {
-+		hid_err(ns2->hdev, "Failed to allocate LEDs\n");
 +		input_unregister_device(input);
 +		return -ENOMEM;
 +	}
@@ -1245,6 +1772,8 @@ index 43e0f2aaea..0198e2e645 100644
 +		ret = switch2_init_controller(ns2);
 +
 +	if (ret < 0) {
++		if (cfg->shutdown)
++			cfg->shutdown(cfg);
 +		cfg->parent = NULL;
 +		ns2->cfg = NULL;
 +	}
@@ -1265,6 +1794,8 @@ index 43e0f2aaea..0198e2e645 100644
 +		mutex_unlock(&ns2->lock);
 +		return;
 +	}
++	if (ns2->cfg->shutdown)
++		ns2->cfg->shutdown(ns2->cfg);
 +	ns2->cfg->parent = NULL;
 +	ns2->cfg = NULL;
 +	mutex_unlock(&ns2->lock);
@@ -1384,7 +1915,7 @@ index 43e0f2aaea..0198e2e645 100644
  	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
  			 USB_DEVICE_ID_NINTENDO_PROCON) },
  	{ HID_USB_DEVICE(USB_VENDOR_ID_NINTENDO,
-@@ -2905,10 +4112,67 @@ static const struct hid_device_id nintendo_hid_devices[] = {
+@@ -2905,10 +4115,67 @@ static const struct hid_device_id nintendo_hid_devices[] = {
  			 USB_DEVICE_ID_NINTENDO_N64CON) },
  	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_HORI,
  			 USB_DEVICE_ID_HORI_WIRELESS_SWITCH_PAD) },
@@ -1452,7 +1983,7 @@ index 43e0f2aaea..0198e2e645 100644
  static struct hid_driver nintendo_hid_driver = {
  	.name		= "nintendo",
  	.id_table	= nintendo_hid_devices,
-@@ -2936,4 +4200,5 @@ MODULE_LICENSE("GPL");
+@@ -2936,4 +4203,5 @@ MODULE_LICENSE("GPL");
  MODULE_AUTHOR("Ryan McClelland <rymcclel@gmail.com>");
  MODULE_AUTHOR("Emily Strickland <linux@emily.st>");
  MODULE_AUTHOR("Daniel J. Ogorchock <djogorchock@gmail.com>");
@@ -1460,10 +1991,10 @@ index 43e0f2aaea..0198e2e645 100644
  MODULE_DESCRIPTION("Driver for Nintendo Switch Controllers");
 diff --git a/drivers/hid/hid-nintendo.h b/drivers/hid/hid-nintendo.h
 new file mode 100644
-index 0000000000..7aff22f302
+index 0000000000..9bdef5fffa
 --- /dev/null
 +++ b/drivers/hid/hid-nintendo.h
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,73 @@
 +/* SPDX-License-Identifier: GPL-2.0+ */
 +/*
 + * HID driver for Nintendo Switch 2 controllers
@@ -1527,6 +2058,7 @@ index 0000000000..7aff22f302
 +	int (*send_command)(enum switch2_cmd command, uint8_t subcommand,
 +		const void *message, size_t length,
 +		struct switch2_cfg_intf *intf);
++	void (*shutdown)(struct switch2_cfg_intf *intf);
 +};
 +
 +int switch2_controller_attach_cfg(const char *phys, struct switch2_cfg_intf *cfg);
@@ -1536,526 +2068,14 @@ index 0000000000..7aff22f302
 +	const uint8_t *message, size_t length);
 +
 +#endif
-diff --git a/drivers/input/joystick/Kconfig b/drivers/input/joystick/Kconfig
-index 7755e5b454..868262c6cc 100644
---- a/drivers/input/joystick/Kconfig
-+++ b/drivers/input/joystick/Kconfig
-@@ -422,4 +422,15 @@ config JOYSTICK_SEESAW
- 	  To compile this driver as a module, choose M here: the module will be
- 	  called adafruit-seesaw.
- 
-+config JOYSTICK_NINTENDO_SWITCH2_USB
-+	tristate "Wired Nintendo Switch 2 controller support"
-+	depends on HID_NINTENDO
-+	depends on USB
-+	help
-+	  Say Y here if you want to enable support for wired Nintendo Switch 2
-+	  controllers.
-+
-+	  To compile this driver as a module, choose M here: the
-+	  module will be called nintendo-switch2-usb.
-+
- endif
-diff --git a/drivers/input/joystick/Makefile b/drivers/input/joystick/Makefile
-index 9976f596a9..8f92900ae8 100644
---- a/drivers/input/joystick/Makefile
-+++ b/drivers/input/joystick/Makefile
-@@ -34,6 +34,7 @@ obj-$(CONFIG_JOYSTICK_SIDEWINDER)	+= sidewinder.o
- obj-$(CONFIG_JOYSTICK_SPACEBALL)	+= spaceball.o
- obj-$(CONFIG_JOYSTICK_SPACEORB)		+= spaceorb.o
- obj-$(CONFIG_JOYSTICK_STINGER)		+= stinger.o
-+obj-$(CONFIG_JOYSTICK_NINTENDO_SWITCH2_USB)	+= nintendo-switch2-usb.o
- obj-$(CONFIG_JOYSTICK_TMDC)		+= tmdc.o
- obj-$(CONFIG_JOYSTICK_TURBOGRAFX)	+= turbografx.o
- obj-$(CONFIG_JOYSTICK_TWIDJOY)		+= twidjoy.o
-diff --git a/drivers/input/joystick/nintendo-switch2-usb.c b/drivers/input/joystick/nintendo-switch2-usb.c
-new file mode 100644
-index 0000000000..36a5ffbd6a
---- /dev/null
-+++ b/drivers/input/joystick/nintendo-switch2-usb.c
-@@ -0,0 +1,475 @@
-+// SPDX-License-Identifier: GPL-2.0+
-+/*
-+ * USB driver for Nintendo Switch 2 controllers configuration interface
-+ *
-+ * Copyright (c) 2025 Valve Software
-+ *
-+ * This driver is based on the following work:
-+ *   https://gist.github.com/shinyquagsire23/66f006b46c56216acbaac6c1e2279b64
-+ *   https://github.com/ndeadly/switch2_controller_research
-+ */
-+
-+#include "../../hid/hid-ids.h"
-+#include "../../hid/hid-nintendo.h"
-+#include <linux/module.h>
-+#include <linux/usb/input.h>
-+
-+#define NS2_BULK_SIZE 64
-+#define NS2_IN_URBS 2
-+#define NS2_OUT_URBS 4
-+
-+static struct usb_driver switch2_usb;
-+
-+enum switch2_urb_state {
-+	NS2_URB_FREE,
-+	NS2_URB_OUT,
-+	NS2_URB_IN,
-+};
-+
-+struct switch2_urb {
-+	struct urb *urb;
-+	uint8_t *data;
-+	enum switch2_urb_state state;
-+};
-+
-+struct switch2_usb {
-+	struct switch2_cfg_intf cfg;
-+	struct usb_device *udev;
-+
-+	struct switch2_urb bulk_in[NS2_IN_URBS];
-+	struct usb_anchor bulk_in_anchor;
-+	bool shutdown;
-+	spinlock_t bulk_in_lock;
-+
-+	struct switch2_urb bulk_out[NS2_OUT_URBS];
-+	struct usb_anchor bulk_out_anchor;
-+	spinlock_t bulk_out_lock;
-+
-+	struct work_struct message_in_work;
-+};
-+
-+static void switch2_bulk_in(struct urb *urb)
-+{
-+	struct switch2_usb *ns2_usb = urb->context;
-+	int i;
-+	bool schedule = false;
-+	unsigned long flags;
-+
-+	switch (urb->status) {
-+	case 0:
-+		schedule = true;
-+		break;
-+	case -ECONNRESET:
-+	case -ENOENT:
-+	case -ESHUTDOWN:
-+		dev_dbg(&ns2_usb->udev->dev, "shutting down input urb: %d\n", urb->status);
-+		return;
-+	case -EPIPE:
-+		break;
-+	default:
-+		dev_dbg(&ns2_usb->udev->dev, "unknown input urb status: %d\n", urb->status);
-+		break;
-+	}
-+
-+	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+	if (ns2_usb->shutdown)
-+		schedule = false;
-+
-+	for (i = 0; i < NS2_IN_URBS; i++) {
-+		int err;
-+		struct switch2_urb *ns2_urb;
-+
-+		if (ns2_usb->bulk_in[i].urb == urb) {
-+			if (schedule) {
-+				ns2_usb->bulk_in[i].state = NS2_URB_IN;
-+				continue;
-+			} else {
-+				ns2_usb->bulk_in[i].state = NS2_URB_FREE;
-+			}
-+		}
-+
-+		if (ns2_usb->bulk_in[i].state != NS2_URB_FREE)
-+			continue;
-+
-+		/*
-+		 * We want exactly one bulk in URB scheduled at a time, so only
-+		 * reschedule this immediately if nothing else is scheduled
-+		 * currently.
-+		 */
-+		if (!usb_anchor_empty(&ns2_usb->bulk_in_anchor) || ns2_usb->shutdown)
-+			continue;
-+
-+		ns2_urb = &ns2_usb->bulk_in[i];
-+		if (!ns2_urb)
-+			continue;
-+
-+		usb_anchor_urb(ns2_urb->urb, &ns2_usb->bulk_in_anchor);
-+		err = usb_submit_urb(ns2_urb->urb, GFP_ATOMIC);
-+		if (err) {
-+			usb_unanchor_urb(ns2_urb->urb);
-+			dev_dbg(&ns2_usb->udev->dev, "failed to queue input urb: %d\n", err);
-+		} else {
-+			ns2_urb->state = NS2_URB_OUT;
-+		}
-+	}
-+	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+	if (schedule)
-+		schedule_work(&ns2_usb->message_in_work);
-+}
-+
-+static void switch2_bulk_out(struct urb *urb)
-+{
-+	struct switch2_usb *ns2_usb = urb->context;
-+	int i;
-+
-+	guard(spinlock_irqsave)(&ns2_usb->bulk_out_lock);
-+
-+	switch (urb->status) {
-+	case 0:
-+		break;
-+	case -ECONNRESET:
-+	case -ENOENT:
-+	case -ESHUTDOWN:
-+		dev_dbg(&ns2_usb->udev->dev, "shutting down output urb: %d\n", urb->status);
-+		return;
-+	case -EPIPE:
-+		break;
-+	default:
-+		dev_dbg(&ns2_usb->udev->dev, "unknown output urb status: %d\n", urb->status);
-+		break;
-+	}
-+
-+	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		if (ns2_usb->bulk_out[i].urb != urb)
-+			continue;
-+
-+		ns2_usb->bulk_out[i].state = NS2_URB_FREE;
-+		break;
-+	}
-+}
-+
-+static int switch2_usb_send_cmd(enum switch2_cmd command, uint8_t subcommand,
-+	const void *message, size_t size, struct switch2_cfg_intf *cfg)
-+{
-+	struct switch2_usb *ns2_usb = (struct switch2_usb *)cfg;
-+	struct switch2_urb *urb = NULL;
-+	int i;
-+	int ret;
-+	unsigned long flags;
-+
-+	struct switch2_cmd_header header = {
-+		command, NS2_DIR_OUT | NS2_FLAG_OK, NS2_TRANS_USB, subcommand, 0, size
-+	};
-+
-+	if (WARN_ON(size > 56))
-+		return -EINVAL;
-+
-+	spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
-+	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		if (ns2_usb->bulk_out[i].state != NS2_URB_FREE)
-+			continue;
-+
-+		urb = &ns2_usb->bulk_out[i];
-+		urb->state = NS2_URB_OUT;
-+		break;
-+	}
-+	spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
-+
-+	if (!urb) {
-+		dev_warn(&ns2_usb->udev->dev, "output queue full, dropping message\n");
-+		return -ENOBUFS;
-+	}
-+
-+	memcpy(urb->data, &header, sizeof(header));
-+	if (message && size)
-+		memcpy(&urb->data[8], message, size);
-+	urb->urb->transfer_buffer_length = size + sizeof(header);
-+
-+	print_hex_dump_debug("sending cmd: ", DUMP_PREFIX_OFFSET, 16, 1, urb->data,
-+		size + sizeof(header), false);
-+
-+	usb_anchor_urb(urb->urb, &ns2_usb->bulk_out_anchor);
-+	ret = usb_submit_urb(urb->urb, GFP_KERNEL);
-+	if (ret) {
-+		if (ret != -ENODEV)
-+			dev_warn(&ns2_usb->udev->dev, "failed to submit output urb: %i", ret);
-+		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
-+		urb->state = NS2_URB_FREE;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
-+		usb_unanchor_urb(urb->urb);
-+		return ret;
-+	}
-+
-+	return 0;
-+}
-+
-+static void switch2_usb_message_in_work(struct work_struct *work)
-+{
-+	struct switch2_usb *ns2_usb = container_of(work, struct switch2_usb, message_in_work);
-+	struct switch2_urb *urb;
-+	int err;
-+	int i;
-+	unsigned long flags;
-+
-+	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+	for (i = 0; i < NS2_IN_URBS; i++) {
-+		urb = &ns2_usb->bulk_in[i];
-+		if (urb->state != NS2_URB_IN)
-+			continue;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+		if (ns2_usb->cfg.parent) {
-+			err = switch2_receive_command(ns2_usb->cfg.parent,
-+				urb->urb->transfer_buffer, urb->urb->actual_length);
-+			if (err)
-+				dev_dbg(&ns2_usb->udev->dev, "receive command failed: %d\n", err);
-+		} else {
-+			dev_err(&ns2_usb->udev->dev,
-+				"Got message before controller is fully set up; discarding\n");
-+		}
-+
-+		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+		urb->state = NS2_URB_FREE;
-+		/*
-+		 * We want exactly one bulk in URB scheduled at a time, so only
-+		 * reschedule this immediately if nothing else is scheduled
-+		 * currently.
-+		 */
-+		if (!usb_anchor_empty(&ns2_usb->bulk_in_anchor) || ns2_usb->shutdown)
-+			continue;
-+
-+		usb_anchor_urb(urb->urb, &ns2_usb->bulk_in_anchor);
-+		err = usb_submit_urb(urb->urb, GFP_ATOMIC);
-+		if (err) {
-+			usb_unanchor_urb(urb->urb);
-+			dev_dbg(&ns2_usb->udev->dev,
-+				"failed to queue input urb: %d\n", err);
-+		} else {
-+			urb->state = NS2_URB_OUT;
-+		}
-+	}
-+	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+}
-+
-+static int switch2_usb_probe(struct usb_interface *intf, const struct usb_device_id *id)
-+{
-+	struct switch2_usb *ns2_usb;
-+	struct usb_device *udev;
-+	struct usb_endpoint_descriptor *bulk_in, *bulk_out;
-+	struct urb *urb;
-+	uint8_t *data;
-+	char phys[64];
-+	int ret;
-+	int i;
-+	unsigned long flags;
-+
-+	udev = interface_to_usbdev(intf);
-+	if (usb_make_path(udev, phys, sizeof(phys)) < 0)
-+		return -EINVAL;
-+
-+	ret = usb_find_common_endpoints(intf->cur_altsetting, &bulk_in, &bulk_out, NULL, NULL);
-+	if (ret) {
-+		dev_err(&intf->dev, "failed to find bulk EPs\n");
-+		return ret;
-+	}
-+
-+	ns2_usb = devm_kzalloc(&intf->dev, sizeof(*ns2_usb), GFP_KERNEL);
-+	if (!ns2_usb)
-+		return -ENOMEM;
-+
-+	init_usb_anchor(&ns2_usb->bulk_out_anchor);
-+	spin_lock_init(&ns2_usb->bulk_out_lock);
-+	init_usb_anchor(&ns2_usb->bulk_in_anchor);
-+	spin_lock_init(&ns2_usb->bulk_in_lock);
-+	INIT_WORK(&ns2_usb->message_in_work, switch2_usb_message_in_work);
-+
-+	ns2_usb->udev = udev;
-+	for (i = 0; i < NS2_IN_URBS; i++) {
-+		urb = usb_alloc_urb(0, GFP_KERNEL);
-+		if (!urb) {
-+			ret = -ENOMEM;
-+			goto err_free_in;
-+		}
-+
-+		data = usb_alloc_coherent(udev, NS2_BULK_SIZE, GFP_KERNEL,
-+			&urb->transfer_dma);
-+		if (!data) {
-+			usb_free_urb(urb);
-+			ret = -ENOMEM;
-+			goto err_free_in;
-+		}
-+
-+		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+		usb_fill_bulk_urb(urb, udev,
-+			usb_rcvbulkpipe(udev, bulk_in->bEndpointAddress),
-+			data, NS2_BULK_SIZE, switch2_bulk_in, ns2_usb);
-+		urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
-+
-+		ns2_usb->bulk_in[i].urb = urb;
-+		ns2_usb->bulk_in[i].data = data;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+	}
-+
-+	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		urb = usb_alloc_urb(0, GFP_KERNEL);
-+		if (!urb) {
-+			ret = -ENOMEM;
-+			goto err_free_out;
-+		}
-+
-+		data = usb_alloc_coherent(udev, NS2_BULK_SIZE, GFP_KERNEL,
-+			&urb->transfer_dma);
-+		if (!data) {
-+			usb_free_urb(urb);
-+			ret = -ENOMEM;
-+			goto err_free_out;
-+		}
-+
-+		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
-+		usb_fill_bulk_urb(urb, udev,
-+			usb_sndbulkpipe(udev, bulk_out->bEndpointAddress),
-+			data, NS2_BULK_SIZE, switch2_bulk_out, ns2_usb);
-+		urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
-+
-+		ns2_usb->bulk_out[i].urb = urb;
-+		ns2_usb->bulk_out[i].data = data;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
-+	}
-+
-+	usb_set_intfdata(intf, ns2_usb);
-+
-+	ns2_usb->cfg.dev = &ns2_usb->udev->dev;
-+	ns2_usb->cfg.send_command = switch2_usb_send_cmd;
-+
-+	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+	ns2_usb->bulk_in[0].state = NS2_URB_OUT;
-+	usb_anchor_urb(ns2_usb->bulk_in[0].urb, &ns2_usb->bulk_in_anchor);
-+	ret = usb_submit_urb(ns2_usb->bulk_in[0].urb, GFP_ATOMIC);
-+	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+	if (ret < 0)
-+		goto err_free_out;
-+
-+	ret = switch2_controller_attach_cfg(phys, &ns2_usb->cfg);
-+	if (ret < 0)
-+		goto err_free_out;
-+
-+	return 0;
-+
-+err_free_out:
-+	usb_kill_anchored_urbs(&ns2_usb->bulk_out_anchor);
-+	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
-+		urb = ns2_usb->bulk_out[i].urb;
-+		data = ns2_usb->bulk_out[i].data;
-+		if (!urb) {
-+			spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
-+			continue;
-+		}
-+
-+		ns2_usb->bulk_out[i].urb = NULL;
-+		ns2_usb->bulk_out[i].data = NULL;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
-+
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
-+		usb_free_urb(urb);
-+	}
-+err_free_in:
-+	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+	ns2_usb->shutdown = true;
-+	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
-+	cancel_work_sync(&ns2_usb->message_in_work);
-+	for (i = 0; i < NS2_IN_URBS; i++) {
-+		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+		urb = ns2_usb->bulk_in[i].urb;
-+		data = ns2_usb->bulk_in[i].data;
-+		if (!urb) {
-+			spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+			continue;
-+		}
-+
-+		ns2_usb->bulk_in[i].urb = NULL;
-+		ns2_usb->bulk_in[i].data = NULL;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
-+		usb_free_urb(urb);
-+	}
-+	devm_kfree(&intf->dev, ns2_usb);
-+
-+	return ret;
-+}
-+
-+static void switch2_usb_disconnect(struct usb_interface *intf)
-+{
-+	struct switch2_usb *ns2_usb = usb_get_intfdata(intf);
-+	unsigned long flags;
-+	struct urb *urb;
-+	uint8_t *data;
-+	int i;
-+
-+	/* Prevent any further IN URBs from being scheduled */
-+	spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+	ns2_usb->shutdown = true;
-+	spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+	usb_kill_anchored_urbs(&ns2_usb->bulk_in_anchor);
-+	cancel_work_sync(&ns2_usb->message_in_work);
-+	for (i = 0; i < NS2_IN_URBS; i++) {
-+		spin_lock_irqsave(&ns2_usb->bulk_in_lock, flags);
-+		urb = ns2_usb->bulk_in[i].urb;
-+		data = ns2_usb->bulk_in[i].data;
-+		ns2_usb->bulk_in[i].urb = NULL;
-+		ns2_usb->bulk_in[i].data = NULL;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_in_lock, flags);
-+
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
-+		usb_free_urb(urb);
-+	}
-+
-+	/*
-+	 * We need to detach *before* we kill the out URBs to make sure no
-+	 * further URBs get scheduled by the HID endpoint in the meantime.
-+	 */
-+	switch2_controller_detach_cfg(ns2_usb->cfg.parent);
-+
-+	usb_kill_anchored_urbs(&ns2_usb->bulk_out_anchor);
-+	for (i = 0; i < NS2_OUT_URBS; i++) {
-+		spin_lock_irqsave(&ns2_usb->bulk_out_lock, flags);
-+		urb = ns2_usb->bulk_out[i].urb;
-+		data = ns2_usb->bulk_out[i].data;
-+		ns2_usb->bulk_out[i].urb = NULL;
-+		ns2_usb->bulk_out[i].data = NULL;
-+		spin_unlock_irqrestore(&ns2_usb->bulk_out_lock, flags);
-+
-+		usb_free_coherent(ns2_usb->udev, NS2_BULK_SIZE, data, urb->transfer_dma);
-+		usb_free_urb(urb);
-+	}
-+}
-+
-+#define SWITCH2_CONTROLLER(vend, prod) \
-+	USB_DEVICE_AND_INTERFACE_INFO(vend, prod, USB_CLASS_VENDOR_SPEC, 0, 0)
-+
-+static const struct usb_device_id switch2_usb_devices[] = {
-+	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_JOYCONL) },
-+	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_JOYCONR) },
-+	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_PROCON) },
-+	{ SWITCH2_CONTROLLER(USB_VENDOR_ID_NINTENDO, USB_DEVICE_ID_NINTENDO_NS2_GCCON) },
-+	{ }
-+};
-+MODULE_DEVICE_TABLE(usb, switch2_usb_devices);
-+
-+static struct usb_driver switch2_usb = {
-+	.name		= "nintendo-switch2",
-+	.id_table	= switch2_usb_devices,
-+	.probe		= switch2_usb_probe,
-+	.disconnect	= switch2_usb_disconnect,
-+};
-+module_usb_driver(switch2_usb);
-+
-+MODULE_LICENSE("GPL");
-+MODULE_AUTHOR("Vicki Pfau <vi@endrift.com>");
-+MODULE_DESCRIPTION("Driver for Nintendo Switch 2 Controllers");
 -- 
-2.55.0
+2.56.0
 
-From 06adb78971651155cb9df62251cca0f95ca4eced Mon Sep 17 00:00:00 2001
+
+From 792b03c688269bfaa116360aa41459349c885ec7 Mon Sep 17 00:00:00 2001
 From: Vicki Pfau <vi@endrift.com>
-Date: Tue, 11 Aug 2026 18:20:34 -0700
-Subject: [PATCH 2/3] HID: nintendo: Add rumble support for Switch 2
+Date: Mon, 5 Oct 2026 23:16:08 -0700
+Subject: [PATCH 2/4] HID: nintendo: Add rumble support for Switch 2
  controllers
 
 This adds rumble support for both the "HD Rumble" linear resonant actuator
@@ -2073,7 +2093,7 @@ Signed-off-by: Vicki Pfau <vi@endrift.com>
  2 files changed, 215 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
-index 16203f2cee..dd631700d7 100644
+index 4ca3529419..bd1e050967 100644
 --- a/drivers/hid/Kconfig
 +++ b/drivers/hid/Kconfig
 @@ -885,10 +885,10 @@ config NINTENDO_FF
@@ -2089,10 +2109,10 @@ index 16203f2cee..dd631700d7 100644
 +	Controllers, and the NSO N64 and GameCube controller. For the Pro
 +	Controller, both rumble motors can be controlled individually.
  
- config HID_NTI
- 	tristate "NTI keyboard adapters"
+ config NINTENDO_SWITCH2_USB
+ 	tristate "Wired Nintendo Switch 2 controller support"
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index 0198e2e645..6abd3de20b 100644
+index 9e16be7e33..27bdb62c66 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
 @@ -37,6 +37,7 @@
@@ -2351,7 +2371,7 @@ index 0198e2e645..6abd3de20b 100644
  	hid_info(ns2->hdev, "Firmware version %u.%u.%u (type %i)\n", ns2->version.major,
  		ns2->version.minor, ns2->version.patch, ns2->version.ctlr_type);
  	if (ns2->version.dsp_type >= 0)
-@@ -3806,7 +4002,16 @@ int switch2_init_controller(struct switch2_controller *ns2)
+@@ -3805,7 +4001,16 @@ int switch2_init_controller(struct switch2_controller *ns2)
  		return ns2->cfg->send_command(NS2_CMD_FEATSEL, NS2_SUBCMD_FEATSEL_SET_MASK,
  			switch2_feature_mask, sizeof(switch2_feature_mask), ns2->cfg);
  	case NS2_INIT_ENABLE_FEATURES:
@@ -2369,7 +2389,7 @@ index 0198e2e645..6abd3de20b 100644
  	case NS2_INIT_GRIP_BUTTONS:
  		if (!switch2_ctlr_is_joycon(ns2->ctlr_type)) {
  			switch2_init_step_done(ns2, ns2->init_step);
-@@ -3919,6 +4124,10 @@ int switch2_receive_command(struct switch2_controller *ns2,
+@@ -3918,6 +4123,10 @@ int switch2_receive_command(struct switch2_controller *ns2,
  			switch2_init_step_done(ns2, NS2_INIT_GET_FIRMWARE_INFO);
  		}
  		break;
@@ -2381,12 +2401,13 @@ index 0198e2e645..6abd3de20b 100644
  		break;
  	}
 -- 
-2.55.0
+2.56.0
 
-From 53a06fdcb37754e7dfdacb7d4a41553e1d93991e Mon Sep 17 00:00:00 2001
+
+From 0772bd7b914b8ec21281b2006a3fd4da346a7ddb Mon Sep 17 00:00:00 2001
 From: Vicki Pfau <vi@endrift.com>
-Date: Tue, 11 Aug 2026 18:20:35 -0700
-Subject: [PATCH 3/3] HID: nintendo: Add unified report format support
+Date: Mon, 5 Oct 2026 23:16:09 -0700
+Subject: [PATCH 3/4] HID: nintendo: Add unified report format support
 
 This adds support for the "unified" report format that all controllers also
 support, which has overlapping fields for like buttons and axes between
@@ -2400,7 +2421,7 @@ Signed-off-by: Vicki Pfau <vi@endrift.com>
  1 file changed, 146 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
-index 6abd3de20b..e550c7b69f 100644
+index 27bdb62c66..f9a3b61d42 100644
 --- a/drivers/hid/hid-nintendo.c
 +++ b/drivers/hid/hid-nintendo.c
 @@ -2915,6 +2915,36 @@ static int joycon_suspend(struct hid_device *hdev, pm_message_t message)
@@ -2485,8 +2506,8 @@ index 6abd3de20b..e550c7b69f 100644
 +};
 +
  static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
- 	{ BTN_SOUTH,	0, NS2_BTNR_B,		},
- 	{ BTN_EAST,	0, NS2_BTNR_A,		},
+ 	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
+ 	{ BTN_EAST,	0, NS2_BTNR_B,		},
 @@ -3201,6 +3264,27 @@ static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
  	{ /* sentinel */ },
  };
@@ -2539,7 +2560,7 @@ index 6abd3de20b..e550c7b69f 100644
  static const uint8_t switch2_init_cmd_data[] = {
  	/*
  	 * The last 6 bytes of this packet are the MAC address of
-@@ -3850,11 +3951,51 @@ static int switch2_event(struct hid_device *hdev, struct hid_report *report, uin
+@@ -3849,11 +3950,51 @@ static int switch2_event(struct hid_device *hdev, struct hid_report *report, uin
  
  	switch (report->id) {
  	case NS2_REPORT_UNIFIED:
@@ -2597,5 +2618,60 @@ index 6abd3de20b..e550c7b69f 100644
  	case NS2_REPORT_JCL:
  		switch2_report_stick(input, &ns2->stick_calib[0], ABS_X, false,
 -- 
-2.55.0
+2.56.0
+
+
+From bcc3b55cc4367baff49ee189332744481dd413bb Mon Sep 17 00:00:00 2001
+From: Vicki Pfau <vi@endrift.com>
+Date: Mon, 5 Oct 2026 23:16:10 -0700
+Subject: [PATCH 4/4] HID: nintendo: Patch NYXI Hyperion 3 descriptor
+
+The HID report descriptor for the third-party NYXI Hyperion 3's right
+Joy-Con erroneously reports it as using the report ID for the left Joy-Con.
+Since it does actually send the report ID for the right Joy-Con, the HID
+subsystem rejects it as unknown. Here we patch it to properly report as the
+right Joy-Con report ID to ensure the HID subsystem passes it through
+properly.
+
+Signed-off-by: Vicki Pfau <vi@endrift.com>
+---
+ drivers/hid/hid-nintendo.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
+index f9a3b61d42..115ed11040 100644
+--- a/drivers/hid/hid-nintendo.c
++++ b/drivers/hid/hid-nintendo.c
+@@ -4501,6 +4501,21 @@ static int nintendo_hid_event(struct hid_device *hdev,
+ 		return joycon_event(hdev, report, raw_data, size);
+ }
+ 
++static const __u8 *nintendo_hid_report_fixup(struct hid_device *hdev,
++			    __u8 *rdesc, unsigned int *rsize)
++{
++	if (hdev->vendor == USB_VENDOR_ID_NINTENDO &&
++		hdev->product == USB_DEVICE_ID_NINTENDO_NS2_JOYCONR &&
++		*rsize == 100 && rdesc[24] == NS2_REPORT_JCL)
++		/*
++		 * The NYXI Hyperion 3 right Joy-Con accidentally reports as the
++		 * left one. Since the HID subsystem rejects report IDs that
++		 * aren't listed in the descriptor, we need to patch it.
++		 */
++		rdesc[24] = NS2_REPORT_JCR;
++	return rdesc;
++}
++
+ static int nintendo_hid_probe(struct hid_device *hdev,
+ 			    const struct hid_device_id *id)
+ {
+@@ -4529,6 +4544,7 @@ static int nintendo_hid_suspend(struct hid_device *hdev, pm_message_t message)
+ static struct hid_driver nintendo_hid_driver = {
+ 	.name		= "nintendo",
+ 	.id_table	= nintendo_hid_devices,
++	.report_fixup	= nintendo_hid_report_fixup,
+ 	.probe		= nintendo_hid_probe,
+ 	.remove		= nintendo_hid_remove,
+ 	.raw_event	= nintendo_hid_event,
+-- 
+2.56.0
 

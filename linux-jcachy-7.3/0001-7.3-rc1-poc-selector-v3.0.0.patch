@@ -181,8 +181,8 @@ index 8dff37059f..ae98b89c83 100644
  static unsigned long task_h_load(struct task_struct *p);
  static unsigned long capacity_of(int cpu);
  
-@@ -8336,6 +8336,10 @@ static int dequeue_entities(struct rq *rq, struct sched_entity *se, int flags)
- 	return 1;
+@@ -8400,6 +8400,10 @@ static bool __dequeue_task(struct rq *rq, struct task_struct *p, int flags)
+ 	return true;
  }
  
 +#ifdef CONFIG_SCHED_POC_SELECTOR
@@ -420,9 +420,9 @@ index 8dff37059f..ae98b89c83 100644
  
  	return new_cpu;
  }
-@@ -10090,6 +10176,10 @@ static void wakeup_preempt_fair(struct rq *rq, struct task_struct *p, int wake_f
+@@ -10130,6 +10216,10 @@ static void wakeup_preempt_fair(struct rq *rq, struct task_struct *p, int wake_f
  	struct sched_entity *nse, *se = &donor->se, *pse = &p->se;
- 	struct cfs_rq *cfs_rq = task_cfs_rq(donor);
+ 	struct cfs_rq *cfs_rq = &rq->cfs;
  	int cse_is_idle, pse_is_idle;
 +#ifdef CONFIG_SCHED_POC_SELECTOR
 +	/* the task running here, the waker if this is a local sync wake */
