@@ -266,7 +266,7 @@ diff --git a/drivers/md/dm-crypt.c b/drivers/md/dm-crypt.c
 index 79704fbc523b..2ccc40954c4c 100644
 --- a/drivers/md/dm-crypt.c
 +++ b/drivers/md/dm-crypt.c
-@@ -3225,6 +3225,9 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
+@@ -3230,6 +3230,9 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
  			goto bad;
  	}
  
@@ -352,7 +352,7 @@ diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
 index adec44313772b..1c9db9a246f71 100644
 --- a/net/ipv4/tcp_input.c
 +++ b/net/ipv4/tcp_input.c
-@@ -5354,11 +5354,25 @@ static void tcp_ofo_queue(struct sock *sk)
+@@ -5388,11 +5388,25 @@ static void tcp_ofo_queue(struct sock *sk)
  static bool tcp_prune_ofo_queue(struct sock *sk, const struct sk_buff *in_skb);
  static int tcp_prune_queue(struct sock *sk, const struct sk_buff *in_skb);
  
@@ -401,6 +401,49 @@ index 0cf94c7a2c9c..20450f7a0c92 100644
 -- 
 2.40.2
 
+sched/eevdf: Fix vprot across reweighting
+https://lore.kernel.org/all/20261016153721.7843-1-kayracizmeci@gmail.com/
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 0feec172fd37..fd8902813c9f 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -4954,12 +4954,15 @@ static void reweight_eevdf(struct cfs_rq *cfs_rq, struct sched_entity *se,
+ 	update_load_set(&se->h_load, weight);
+ 
+ 	if (on_rq) {
+-		if (rel_vprot)
+-			se->vprot += avruntime;
+ 		se->deadline += avruntime;
+ 		se->rel_deadline = 0;
+ 		se->vruntime = avruntime - se->vlag;
+ 
++		if (rel_vprot)
++			se->vprot += avruntime;
++		else if (curr)
++			se->vprot = se->vruntime;
++
+ 		if (!curr)
+ 			__enqueue_entity(cfs_rq, se);
+ 		cfs_rq->h_nr_queued++;
+@@ -8270,6 +8273,14 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+ 	if (!curr) {
+ 		reweight_eevdf(cfs_rq, se, weight, false);
+ 		place_entity(cfs_rq, se, flags | ENQUEUE_QUEUED);
++		/*
++		 * During a sched_change pattern, current is dequeued and
++		 * cfs_rq->curr becomes NULL while rq->donor == p. As all
++		 * properties can change, cancel slice protection which is
++		 * not reliable anymore.
++		 */
++		if (task_current_donor(rq, p))
++			cancel_protect_slice(se);
+ 		__enqueue_entity(cfs_rq, se);
+ 	}
+ 
+-- 
+2.53.0
+
 sched/fair: Rebuild load weight when switching to fair
 https://lore.kernel.org/all/20260528131238.3879110-1-quzicheng315@gmail.com/
 
@@ -408,7 +451,7 @@ diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
 index 3ebec186f982..3a21ceefcadf 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -15430,6 +15430,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+@@ -15465,6 +15465,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
  
@@ -424,7 +467,7 @@ index 3ebec186f982..3a21ceefcadf 100644
  static void switched_to_fair(struct rq *rq, struct task_struct *p)
  {
  	WARN_ON_ONCE(p->se.sched_delayed);
-@@ -15807,6 +15816,7 @@ DEFINE_SCHED_CLASS(fair) = {
+@@ -15844,6 +15853,7 @@ DEFINE_SCHED_CLASS(fair) = {
  	.prio_changed		= prio_changed_fair,
  	.switching_from		= switching_from_fair,
  	.switched_from		= switched_from_fair,
@@ -451,6 +494,53 @@ diff -uarp a/fs/ntfs3/run.c b/fs/ntfs3/run.c
  	bool ok, zone;
  	struct wnd_bitmap *wnd;
  
+-- 
+2.53.0
+
+sched/fair: Change the default cgroup_mode to max
+
+Successfully restores smooth, stutter-free scrolling in Discord
+and other Electron-based apps under busy system workloads, out-
+performing the 'concur' configuration in desktop fluidity.
+
+Signed-off-by: Mario Roy <>
+
+diff -uarp a/kernel/sched/debug.c b/kernel/sched/debug.c
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -634,7 +634,7 @@ static void debugfs_fair_server_init(voi
+ }
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED
+-static int cgroup_mode = 2;
++static int cgroup_mode = 3;
+ 
+ /* See __sched_cgroup_mode_update(). */
+ static const char *cgroup_mode_str[] = {
+diff -uarp a/kernel/sched/fair.c b/kernel/sched/fair.c
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -5228,7 +5228,7 @@ static long calc_up_shares(struct cfs_rq
+ 	return READ_ONCE(tg->shares);
+ }
+ 
+-DEFINE_STATIC_CALL(calc_group_shares, calc_concur_shares);
++DEFINE_STATIC_CALL(calc_group_shares, calc_max_shares);
+ 
+ void __sched_cgroup_mode_update(int mode)
+ {
+@@ -5241,10 +5241,10 @@ void __sched_cgroup_mode_update(int mode
+ 		func = &calc_smp_shares;
+ 		break;
+ 	case 2:
+-	default:
+ 		func = &calc_concur_shares;
+ 		break;
+ 	case 3:
++	default:
+ 		func = &calc_max_shares;
+ 		break;
+ 	case 4:
 -- 
 2.53.0
 
