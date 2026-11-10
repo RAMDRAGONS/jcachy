@@ -1,0 +1,31 @@
+From 396bbe5dca381381c2d3591b9dc720afd97e5b6d Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Thu, 5 Nov 2026 17:04:53 -0500
+Subject: [PATCH] Invert Switch 2 Pro Controller ABXY inputs
+
+---
+ drivers/hid/hid-nintendo.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/hid/hid-nintendo.c b/drivers/hid/hid-nintendo.c
+index 4d40f67f3e..746e4a890a 100644
+--- a/drivers/hid/hid-nintendo.c
++++ b/drivers/hid/hid-nintendo.c
+@@ -3244,10 +3244,10 @@ static const struct switch2_ctlr_button_mapping ns2_right_joycon_button_unified_
+ };
+ 
+ static const struct switch2_ctlr_button_mapping ns2_procon_mappings[] = {
+-	{ BTN_SOUTH,	0, NS2_BTNR_A,		},
+-	{ BTN_EAST,	0, NS2_BTNR_B,		},
+-	{ BTN_NORTH,	0, NS2_BTNR_X,		},
+-	{ BTN_WEST,	0, NS2_BTNR_Y,		},
++	{ BTN_SOUTH,	0, NS2_BTNR_B,		},
++	{ BTN_EAST,	0, NS2_BTNR_A,		},
++	{ BTN_NORTH,	0, NS2_BTNR_Y,		},
++	{ BTN_WEST,	0, NS2_BTNR_X,		},
+ 	{ BTN_TL,	1, NS2_BTNL_L,		},
+ 	{ BTN_TR,	0, NS2_BTNR_R,		},
+ 	{ BTN_TL2,	1, NS2_BTNL_ZL,		},
+-- 
+2.56.0
+

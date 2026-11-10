@@ -497,53 +497,6 @@ diff -uarp a/fs/ntfs3/run.c b/fs/ntfs3/run.c
 -- 
 2.53.0
 
-sched/fair: Change the default cgroup_mode to max
-
-Successfully restores smooth, stutter-free scrolling in Discord
-and other Electron-based apps under busy system workloads, out-
-performing the 'concur' configuration in desktop fluidity.
-
-Signed-off-by: Mario Roy <>
-
-diff -uarp a/kernel/sched/debug.c b/kernel/sched/debug.c
---- a/kernel/sched/debug.c
-+++ b/kernel/sched/debug.c
-@@ -634,7 +634,7 @@ static void debugfs_fair_server_init(voi
- }
- 
- #ifdef CONFIG_FAIR_GROUP_SCHED
--static int cgroup_mode = 2;
-+static int cgroup_mode = 3;
- 
- /* See __sched_cgroup_mode_update(). */
- static const char *cgroup_mode_str[] = {
-diff -uarp a/kernel/sched/fair.c b/kernel/sched/fair.c
---- a/kernel/sched/fair.c
-+++ b/kernel/sched/fair.c
-@@ -5228,7 +5228,7 @@ static long calc_up_shares(struct cfs_rq
- 	return READ_ONCE(tg->shares);
- }
- 
--DEFINE_STATIC_CALL(calc_group_shares, calc_concur_shares);
-+DEFINE_STATIC_CALL(calc_group_shares, calc_max_shares);
- 
- void __sched_cgroup_mode_update(int mode)
- {
-@@ -5241,10 +5241,10 @@ void __sched_cgroup_mode_update(int mode
- 		func = &calc_smp_shares;
- 		break;
- 	case 2:
--	default:
- 		func = &calc_concur_shares;
- 		break;
- 	case 3:
-+	default:
- 		func = &calc_max_shares;
- 		break;
- 	case 4:
--- 
-2.53.0
-
 From Stefan Kerkmann
 https://lore.kernel.org/all/47f8c30b-e326-4ff0-a2bc-5683209a9e2d@pengutronix.de/
 
