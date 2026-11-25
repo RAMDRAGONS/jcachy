@@ -1,5 +1,5 @@
 diff --git a/include/linux/mmzone.h b/include/linux/mmzone.h
-index a1b6ee4cc..652543423 100644
+index a1b6ee4ccb..652543423a 100644
 --- a/include/linux/mmzone.h
 +++ b/include/linux/mmzone.h
 @@ -209,6 +209,7 @@ enum zone_stat_item {
@@ -11,7 +11,7 @@ index a1b6ee4cc..652543423 100644
  	NR_UNACCEPTED,
  #endif
 diff --git a/include/linux/page-flags.h b/include/linux/page-flags.h
-index f6625dc04..ffcbbd4d9 100644
+index f6625dc042..ffcbbd4d9c 100644
 --- a/include/linux/page-flags.h
 +++ b/include/linux/page-flags.h
 @@ -107,6 +107,9 @@ enum pageflags {
@@ -50,7 +50,7 @@ index f6625dc04..ffcbbd4d9 100644
  /*
   * Must use a macro here due to header dependency issues. page_zone() is not
 diff --git a/include/linux/pagemap.h b/include/linux/pagemap.h
-index d0f282d6b..e071055fe 100644
+index d0f282d6b1..e071055fe9 100644
 --- a/include/linux/pagemap.h
 +++ b/include/linux/pagemap.h
 @@ -209,6 +209,7 @@ enum mapping_flags {
@@ -80,7 +80,7 @@ index d0f282d6b..e071055fe 100644
  {
  	set_bit(AS_EXITING, &mapping->flags);
 diff --git a/include/linux/swap.h b/include/linux/swap.h
-index 4f686709d..e2bf58eb8 100644
+index 4f686709d7..e2bf58eb8a 100644
 --- a/include/linux/swap.h
 +++ b/include/linux/swap.h
 @@ -313,7 +313,7 @@ extern unsigned long totalreserve_pages;
@@ -93,7 +93,7 @@ index 4f686709d..e2bf58eb8 100644
  
  enum lru_cache_drained {
 diff --git a/include/linux/vm_event_item.h b/include/linux/vm_event_item.h
-index 2628ccda0..c1a63f070 100644
+index 2628ccda07..c1a63f070a 100644
 --- a/include/linux/vm_event_item.h
 +++ b/include/linux/vm_event_item.h
 @@ -36,6 +36,8 @@ enum vm_event_item { PGPGIN, PGPGOUT, PSWPIN, PSWPOUT,
@@ -106,7 +106,7 @@ index 2628ccda0..c1a63f070 100644
  		PGLAZYFREED,
  		PGREUSE,
 diff --git a/include/trace/events/mmflags.h b/include/trace/events/mmflags.h
-index 3c153b3ad..a5b4978e4 100644
+index 3c153b3ad8..a5b4978e46 100644
 --- a/include/trace/events/mmflags.h
 +++ b/include/trace/events/mmflags.h
 @@ -117,6 +117,12 @@ TRACE_DEFINE_ENUM(___GFP_LAST_BIT);
@@ -131,7 +131,7 @@ index 3c153b3ad..a5b4978e4 100644
  IF_HAVE_PG_HWPOISON(hwpoison)						\
  IF_HAVE_PG_IDLE(idle)							\
 diff --git a/mm/Kconfig b/mm/Kconfig
-index afff1b25b..3aa662da9 100644
+index afff1b25b5..3aa662da99 100644
 --- a/mm/Kconfig
 +++ b/mm/Kconfig
 @@ -713,6 +713,24 @@ config PCP_BATCH_SCALE_MAX
@@ -160,7 +160,7 @@ index afff1b25b..3aa662da9 100644
  	def_bool 64BIT
  
 diff --git a/mm/compaction.c b/mm/compaction.c
-index 7e0d60abb..327e37822 100644
+index 7e0d60abb6..327e378220 100644
 --- a/mm/compaction.c
 +++ b/mm/compaction.c
 @@ -2764,6 +2764,14 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
@@ -179,7 +179,7 @@ index 7e0d60abb..327e37822 100644
  				/* No more flushing until we migrate again */
  				last_migrated_pfn = 0;
 diff --git a/mm/filemap.c b/mm/filemap.c
-index 51bd2ee1a..7e28e652f 100644
+index 8399bdfadc..fd32fdde7e 100644
 --- a/mm/filemap.c
 +++ b/mm/filemap.c
 @@ -49,6 +49,7 @@
@@ -591,10 +591,10 @@ index 51bd2ee1a..7e28e652f 100644
  
  	file_accessed(filp);
 diff --git a/mm/folio.c b/mm/folio.c
-index 9b9a5fe56..e01d95730 100644
+index b92433ea04..4927f39567 100644
 --- a/mm/folio.c
 +++ b/mm/folio.c
-@@ -349,6 +349,59 @@ static void __lru_cache_activate_folio(struct folio *folio)
+@@ -375,6 +375,59 @@ static void __lru_cache_activate_folio(struct folio *folio)
  	local_unlock(&cpu_fbatches.lock);
  }
  
@@ -654,7 +654,7 @@ index 9b9a5fe56..e01d95730 100644
  /**
   * folio_mark_accessed - Mark a folio as having seen activity.
   * @folio: The folio to mark.
-@@ -361,16 +414,20 @@ static void __lru_cache_activate_folio(struct folio *folio)
+@@ -387,16 +440,20 @@ static void __lru_cache_activate_folio(struct folio *folio)
   *
   * When a newly allocated folio is not yet visible, so safe for non-atomic ops,
   * __folio_set_referenced() may be substituted for folio_mark_accessed().
@@ -682,7 +682,7 @@ index 9b9a5fe56..e01d95730 100644
  
  	if (!folio_test_referenced(folio)) {
  		folio_set_referenced(folio);
-@@ -380,6 +437,7 @@ void folio_mark_accessed(struct folio *folio)
+@@ -406,6 +463,7 @@ void folio_mark_accessed(struct folio *folio)
  		 * this list is never rotated or maintained, so marking an
  		 * unevictable page accessed has no effect.
  		 */
@@ -690,7 +690,7 @@ index 9b9a5fe56..e01d95730 100644
  	} else if (!folio_test_active(folio)) {
  		/*
  		 * If the folio is on the LRU, queue it for activation via
-@@ -393,9 +451,14 @@ void folio_mark_accessed(struct folio *folio)
+@@ -419,9 +477,14 @@ void folio_mark_accessed(struct folio *folio)
  			__lru_cache_activate_folio(folio);
  		folio_clear_referenced(folio);
  		workingset_activation(folio);
@@ -707,25 +707,25 @@ index 9b9a5fe56..e01d95730 100644
  EXPORT_SYMBOL(folio_mark_accessed);
  
 diff --git a/mm/huge_memory.c b/mm/huge_memory.c
-index 7b06fd5f0..7e70f5707 100644
+index 23a9caadad..5e658818d7 100644
 --- a/mm/huge_memory.c
 +++ b/mm/huge_memory.c
-@@ -3814,6 +3814,7 @@ static void __split_folio_to_order(struct folio *folio, int old_order,
+@@ -3840,6 +3840,7 @@ static void __split_folio_to_order(struct folio *folio, int old_order,
  #endif
  				 (1L << PG_dirty) |
  				 (1L << PG_dropbehind) |
 +				 __PG_RCU_FREE |
- 				 LRU_GEN_MASK | LRU_REFS_MASK));
+ 				 LRU_GEN_MASK | LRU_REFS_MASK);
  
- 		new_folio->mapping = folio->mapping;
+ 		/*
 diff --git a/mm/internal.h b/mm/internal.h
-index e3f92883b..73f62251e 100644
+index 85cf7becf8..297575e740 100644
 --- a/mm/internal.h
 +++ b/mm/internal.h
-@@ -1274,6 +1274,9 @@ struct migration_target_control {
+@@ -1276,6 +1276,9 @@ struct migration_target_control {
   */
- size_t splice_folio_into_pipe(struct pipe_inode_info *pipe,
- 			      struct folio *folio, loff_t fpos, size_t size);
+ ssize_t splice_folio_into_pipe(struct pipe_inode_info *pipe,
+ 			       struct folio *folio, loff_t fpos, size_t size);
 +void filemap_read_accessed(struct folio *folio, loff_t pos, loff_t last_pos);
 +size_t filemap_read_rcu(struct kiocb *iocb, struct iov_iter *iter,
 +			loff_t last_pos);
@@ -733,7 +733,7 @@ index e3f92883b..73f62251e 100644
  static inline bool vma_is_single_threaded_private(struct vm_area_struct *vma)
  {
 diff --git a/mm/memory-failure.c b/mm/memory-failure.c
-index b705f9f97..288afb9f8 100644
+index b215312f26..45c09e8162 100644
 --- a/mm/memory-failure.c
 +++ b/mm/memory-failure.c
 @@ -251,6 +251,10 @@ static bool page_handle_poison(struct page *page, bool hugepage_or_freepage, boo
@@ -775,7 +775,7 @@ index b705f9f97..288afb9f8 100644
  	if (!count_increased) {
  		ret = __get_hwpoison_page(p, flags);
  		if (!ret) {
-@@ -2475,6 +2493,7 @@ int memory_failure(unsigned long pfn, int flags)
+@@ -2455,6 +2473,7 @@ int memory_failure(unsigned long pfn, int flags)
  	if (res != -ENOENT)
  		goto unlock_mutex;
  
@@ -783,7 +783,7 @@ index b705f9f97..288afb9f8 100644
  	if (TestSetPageHWPoison(p)) {
  		res = -EHWPOISON;
  		if (flags & MF_ACTION_REQUIRED)
-@@ -2482,6 +2501,13 @@ int memory_failure(unsigned long pfn, int flags)
+@@ -2462,6 +2481,13 @@ int memory_failure(unsigned long pfn, int flags)
  		if (flags & MF_COUNT_INCREASED)
  			put_page(p);
  		action_result(pfn, MF_MSG_ALREADY_POISONED, MF_FAILED);
@@ -797,7 +797,7 @@ index b705f9f97..288afb9f8 100644
  		goto unlock_mutex;
  	}
  
-@@ -2647,6 +2673,13 @@ int memory_failure(unsigned long pfn, int flags)
+@@ -2625,6 +2651,13 @@ int memory_failure(unsigned long pfn, int flags)
  
  identify_page_state:
  	res = identify_page_state(pfn, p, page_flags);
@@ -812,7 +812,7 @@ index b705f9f97..288afb9f8 100644
  	return res;
  unlock_page:
 diff --git a/mm/memory_hotplug.c b/mm/memory_hotplug.c
-index b9f02bc6e..62b62ad16 100644
+index b9f02bc6ed..62b62ad16a 100644
 --- a/mm/memory_hotplug.c
 +++ b/mm/memory_hotplug.c
 @@ -1999,6 +1999,7 @@ int offline_pages(unsigned long start_pfn, unsigned long nr_pages,
@@ -850,10 +850,10 @@ index b9f02bc6e..62b62ad16 100644
  	} while (ret);
  
 diff --git a/mm/page_alloc.c b/mm/page_alloc.c
-index 3f04c68ea..06cbe9ed8 100644
+index 6e074e155a..7fe63b8bd7 100644
 --- a/mm/page_alloc.c
 +++ b/mm/page_alloc.c
-@@ -1301,6 +1301,206 @@ static inline void pgalloc_tag_sub_pages(struct alloc_tag *tag, unsigned int nr)
+@@ -1314,6 +1314,206 @@ static inline void pgalloc_tag_sub_pages(struct alloc_tag *tag, unsigned int nr)
  
  #endif /* CONFIG_MEM_ALLOC_PROFILING */
  
@@ -1060,7 +1060,7 @@ index 3f04c68ea..06cbe9ed8 100644
  static __always_inline bool __free_pages_prepare(struct page *page,
  		unsigned int order, fpi_t fpi_flags)
  {
-@@ -1315,6 +1515,19 @@ static __always_inline bool __free_pages_prepare(struct page *page,
+@@ -1328,6 +1528,19 @@ static __always_inline bool __free_pages_prepare(struct page *page,
  
  	VM_BUG_ON_PAGE(PageTail(page), page);
  
@@ -1080,7 +1080,7 @@ index 3f04c68ea..06cbe9ed8 100644
  	trace_mm_page_free(page, order);
  	kmsan_free_page(page, order);
  
-@@ -4623,6 +4836,58 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
+@@ -4636,6 +4849,58 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
  	return !!__gfp_pfmemalloc_flags(gfp_mask);
  }
  
@@ -1139,7 +1139,7 @@ index 3f04c68ea..06cbe9ed8 100644
  /*
   * Checks whether it makes sense to retry the reclaim to make a forward progress
   * for the given allocation request.
-@@ -4636,7 +4901,8 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
+@@ -4649,7 +4914,8 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
  static inline bool
  should_reclaim_retry(gfp_t gfp_mask, unsigned order,
  		     struct alloc_context *ac, int alloc_flags,
@@ -1149,7 +1149,7 @@ index 3f04c68ea..06cbe9ed8 100644
  {
  	struct zone *zone;
  	struct zoneref *z;
-@@ -4650,10 +4916,12 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
+@@ -4663,10 +4929,12 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
  	 * for compaction without freeing anything.
  	 */
  	if (did_some_progress && order <= PAGE_ALLOC_COSTLY_ORDER &&
@@ -1164,7 +1164,7 @@ index 3f04c68ea..06cbe9ed8 100644
  
  	if (*no_progress_loops > MAX_RECLAIM_RETRIES)
  		goto out;
-@@ -4706,6 +4974,10 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
+@@ -4719,6 +4987,10 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
  	else
  		cond_resched();
  out:
@@ -1175,7 +1175,7 @@ index 3f04c68ea..06cbe9ed8 100644
  	/* Before OOM, exhaust highatomic_reserve */
  	if (!ret)
  		return unreserve_highatomic_pageblock(ac, true);
-@@ -4795,6 +5067,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4808,6 +5080,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  	enum compact_result compact_result;
  	int compaction_retries;
  	int no_progress_loops;
@@ -1183,7 +1183,7 @@ index 3f04c68ea..06cbe9ed8 100644
  	unsigned int cpuset_mems_cookie;
  	unsigned int zonelist_iter_cookie;
  	int reserve_flags;
-@@ -4831,6 +5104,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -4844,6 +5117,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  restart:
  	compaction_retries = 0;
  	no_progress_loops = 0;
@@ -1191,7 +1191,7 @@ index 3f04c68ea..06cbe9ed8 100644
  	compact_result = COMPACT_SKIPPED;
  	compact_priority = DEF_COMPACT_PRIORITY;
  	can_retry_reserves = true;
-@@ -5029,7 +5303,8 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -5042,7 +5316,8 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  		goto restart;
  
  	if (should_reclaim_retry(gfp_mask, order, ac, alloc_flags,
@@ -1201,7 +1201,7 @@ index 3f04c68ea..06cbe9ed8 100644
  		goto retry;
  
  	/*
-@@ -5077,6 +5352,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
+@@ -5090,6 +5365,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
  	/* Retry as long as the OOM killer is making progress */
  	if (did_some_progress) {
  		no_progress_loops = 0;
@@ -1209,7 +1209,7 @@ index 3f04c68ea..06cbe9ed8 100644
  		goto retry;
  	}
  
-@@ -6456,6 +6732,8 @@ void __init setup_per_cpu_pageset(void)
+@@ -6469,6 +6745,8 @@ void __init setup_per_cpu_pageset(void)
  	for_each_online_pgdat(pgdat)
  		pgdat->per_cpu_nodestats =
  			alloc_percpu(struct per_cpu_nodestat);
@@ -1218,7 +1218,7 @@ index 3f04c68ea..06cbe9ed8 100644
  }
  
  __meminit void zone_pcp_init(struct zone *zone)
-@@ -7443,7 +7721,16 @@ int alloc_contig_frozen_range_noprof(unsigned long start, unsigned long end,
+@@ -7456,7 +7734,16 @@ int alloc_contig_frozen_range_noprof(unsigned long start, unsigned long end,
  	outer_start = find_large_buddy(start);
  
  	/* Make sure the range is really isolated. */
@@ -1237,7 +1237,7 @@ index 3f04c68ea..06cbe9ed8 100644
  		goto done;
  	}
 diff --git a/mm/page_alloc.h b/mm/page_alloc.h
-index 917653ae1..dc265c971 100644
+index 917653ae14..dc265c971b 100644
 --- a/mm/page_alloc.h
 +++ b/mm/page_alloc.h
 @@ -240,6 +240,15 @@ struct page *__alloc_frozen_pages_noprof(gfp_t gfp, unsigned int order, int nid,
@@ -1257,10 +1257,10 @@ index 917653ae1..dc265c971 100644
  #ifdef CONFIG_NUMA
  struct page *alloc_frozen_pages_noprof(gfp_t, unsigned int order);
 diff --git a/mm/shmem.c b/mm/shmem.c
-index 10cef89b0..efdb68601 100644
+index e351cd425d..6c4fa48bc0 100644
 --- a/mm/shmem.c
 +++ b/mm/shmem.c
-@@ -3555,10 +3555,18 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+@@ -3567,10 +3567,18 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
  	struct file *file = iocb->ki_filp;
  	struct inode *inode = file_inode(file);
  	struct address_space *mapping = inode->i_mapping;
@@ -1280,7 +1280,7 @@ index 10cef89b0..efdb68601 100644
  
  	for (;;) {
  		struct folio *folio = NULL;
-@@ -3624,11 +3632,7 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+@@ -3636,11 +3644,7 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
  					flush_dcache_page(page);
  			}
  
@@ -1293,7 +1293,7 @@ index 10cef89b0..efdb68601 100644
  			/*
  			 * Ok, we have the page, and it's up-to-date, so
  			 * now we can copy it to user space...
-@@ -3656,6 +3660,7 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+@@ -3668,6 +3672,7 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
  
  		retval += ret;
  		iocb->ki_pos += ret;
@@ -1301,7 +1301,7 @@ index 10cef89b0..efdb68601 100644
  
  		if (!iov_iter_count(to))
  			break;
-@@ -3665,8 +3670,9 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
+@@ -3677,8 +3682,9 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
  		}
  		cond_resched();
  	}
@@ -1313,7 +1313,7 @@ index 10cef89b0..efdb68601 100644
  }
  
 diff --git a/mm/show_mem.c b/mm/show_mem.c
-index b938cbcd7..0d3bddbda 100644
+index b938cbcd77..0d3bddbda1 100644
 --- a/mm/show_mem.c
 +++ b/mm/show_mem.c
 @@ -204,7 +204,7 @@ static void show_free_areas(unsigned int filter, const nodemask_t *nodemask,
@@ -1354,7 +1354,7 @@ index b938cbcd7..0d3bddbda 100644
  		for (i = 0; i < MAX_NR_ZONES; i++)
  			printk(KERN_CONT " %ld", zone->lowmem_reserve[i]);
 diff --git a/mm/vmstat.c b/mm/vmstat.c
-index c6beac6be..43370b900 100644
+index c6beac6be2..43370b9008 100644
 --- a/mm/vmstat.c
 +++ b/mm/vmstat.c
 @@ -1212,6 +1212,7 @@ const char * const vmstat_text[] = {

@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 02:52:57 -0500
+Subject: [PATCH] sched/fair: count runnable task in dequeue_hierarchy()
+
+h_nr_runnable started at 0, so the later reset for sched_delayed tasks
+had no effect and dequeuing a non-delayed task never decremented
+cfs_rq->h_nr_runnable up the hierarchy. Start at 1 so only delayed
+tasks, already accounted by set_delayed(), are skipped.
+---
+ kernel/sched/fair.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 01fd30766d..8a4840af8a 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -8258,7 +8258,7 @@ static void dequeue_hierarchy(struct task_struct *p, int flags)
+ {
+ 	struct sched_entity *se = &p->se;
+ 	bool task_throttled = flags & DEQUEUE_THROTTLE;
+-	int h_nr_runnable = 0;
++	int h_nr_runnable = 1;
+ 	int h_nr_idle = task_has_idle_policy(p);
+ 	bool dequeue = true;
+ 
+-- 
+2.56.1
+

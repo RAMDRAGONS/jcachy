@@ -1,0 +1,176 @@
+From 82190ed9bb2ab2471ab94bd925e5d663186b34e6 Mon Sep 17 00:00:00 2001
+From: Judas Drekonym <77771385+RAMDRAGONS@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 18:47:18 -0500
+Subject: [PATCH] HID: hori: add driver for the HORI Taiko drum for Switch
+
+The HORI Taiko no Tatsujin drum controller for Nintendo Switch
+(0f0d:00f0) describes its 14 buttons as generic Button 1..14 usages in
+Switch order (Y, B, A, X, L, R, ZL, ZR, Minus, Plus, LS, RS, Home,
+Capture). hid-generic assigns these to BTN_SOUTH onwards in report
+order, so nearly every control is reported with the wrong code: the
+drum faces come out as BTN_SELECT/BTN_START, the rims as BTN_TL/BTN_TR,
+Minus/Plus as BTN_TL2/BTN_TR2, and so on.
+
+The descriptor also puts the right stick on Generic Desktop Z/Rz, which
+hid-input reports as ABS_Z/ABS_RZ. Userspace treats those as analog
+triggers: SDL's generated Linux mapping binds lefttrigger and
+righttrigger to them in preference to BTN_TL2/BTN_TR2. The drum has no
+sticks, so those axes never move and games reading the triggers through
+SDL (including Wine/Proton's XInput path) never see the rim hits.
+
+Add a small driver that remaps the button usages and reports Z/Rz as
+ABS_RX/ABS_RY. Face buttons follow the positional gamepad convention
+used by hid-nintendo, the drum faces (don) report as
+BTN_THUMBL/BTN_THUMBR and the drum rims (ka) as BTN_TL2/BTN_TR2. The
+hat switch keeps the default mapping, which is already correct.
+
+Tested on the device with evdev capture of every control, SDL3's
+generated gamepad mapping, and Taiko no Tatsujin: Rhythm Festival
+under Proton.
+---
+ drivers/hid/Kconfig    | 11 ++++++
+ drivers/hid/Makefile   |  1 +
+ drivers/hid/hid-hori.c | 84 ++++++++++++++++++++++++++++++++++++++++++
+ drivers/hid/hid-ids.h  |  1 +
+ 4 files changed, 97 insertions(+)
+ create mode 100644 drivers/hid/hid-hori.c
+
+diff --git a/drivers/hid/Kconfig b/drivers/hid/Kconfig
+index 5c65d489a8..d835645c61 100644
+--- a/drivers/hid/Kconfig
++++ b/drivers/hid/Kconfig
+@@ -433,6 +433,17 @@ config HOLTEK_FF
+ 	  Say Y here if you have a Holtek On Line Grip based game controller
+ 	  and want to have force feedback support for it.
+ 
++config HID_HORI
++	tristate "HORI Nintendo Switch controllers"
++	depends on USB_HID
++	help
++	  Support for HORI licensed Nintendo Switch controllers that need
++	  their buttons remapped:
++	    - HORI Taiko no Tatsujin drum controller for Nintendo Switch
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called hid-hori.
++
+ config HID_HYPERX
+ 	tristate "HyperX microphones"
+ 	depends on USB_HID
+diff --git a/drivers/hid/Makefile b/drivers/hid/Makefile
+index 7bc5583c69..549f702ce6 100644
+--- a/drivers/hid/Makefile
++++ b/drivers/hid/Makefile
+@@ -66,6 +66,7 @@ obj-$(CONFIG_HID_GYRATION)	+= hid-gyration.o
+ obj-$(CONFIG_HID_HOLTEK)	+= hid-holtek-kbd.o
+ obj-$(CONFIG_HID_HOLTEK)	+= hid-holtek-mouse.o
+ obj-$(CONFIG_HID_HOLTEK)	+= hid-holtekff.o
++obj-$(CONFIG_HID_HORI)		+= hid-hori.o
+ obj-$(CONFIG_HID_HYPERV_MOUSE)	+= hid-hyperv.o
+ obj-$(CONFIG_HID_HYPERX)	+= hid-hyperx.o
+ obj-$(CONFIG_HID_ICADE)		+= hid-icade.o
+diff --git a/drivers/hid/hid-hori.c b/drivers/hid/hid-hori.c
+new file mode 100644
+index 0000000000..20c264f9da
+--- /dev/null
++++ b/drivers/hid/hid-hori.c
+@@ -0,0 +1,84 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * HID driver for HORI Nintendo Switch licensed controllers
++ *
++ * The HORI Taiko no Tatsujin drum controller for Nintendo Switch
++ * (0f0d:00f0) declares its 14 buttons as plain Button 1..14 usages in
++ * Switch order, so a sequential mapping from BTN_SOUTH puts nearly every
++ * control on the wrong evdev code.
++ */
++
++#include <linux/hid.h>
++#include <linux/input.h>
++#include <linux/module.h>
++
++#include "hid-ids.h"
++
++/*
++ * Indexed by HID button usage minus one. Face buttons are mapped by
++ * position, not label. The drum rims report on the ZL/ZR bits and the drum
++ * faces on the stick click bits.
++ */
++static const u16 hori_taiko_buttons[] = {
++	BTN_WEST,	/* Y */
++	BTN_SOUTH,	/* B */
++	BTN_EAST,	/* A */
++	BTN_NORTH,	/* X */
++	BTN_TL,		/* L */
++	BTN_TR,		/* R */
++	BTN_TL2,	/* left rim (ka) */
++	BTN_TR2,	/* right rim (ka) */
++	BTN_SELECT,	/* - */
++	BTN_START,	/* + */
++	BTN_THUMBL,	/* left face (don) */
++	BTN_THUMBR,	/* right face (don) */
++	BTN_MODE,	/* Home */
++	BTN_Z,		/* Capture */
++};
++
++static int hori_input_mapping(struct hid_device *hdev, struct hid_input *hi,
++			      struct hid_field *field, struct hid_usage *usage,
++			      unsigned long **bit, int *max)
++{
++	unsigned int idx;
++
++	/*
++	 * Z/Rz carry the right stick. Left as ABS_Z/ABS_RZ they read as
++	 * analog triggers to userspace, which then ignores BTN_TL2/BTN_TR2.
++	 */
++	switch (usage->hid) {
++	case HID_GD_Z:
++		hid_map_usage_clear(hi, usage, bit, max, EV_ABS, ABS_RX);
++		return 1;
++	case HID_GD_RZ:
++		hid_map_usage_clear(hi, usage, bit, max, EV_ABS, ABS_RY);
++		return 1;
++	}
++
++	if ((usage->hid & HID_USAGE_PAGE) != HID_UP_BUTTON)
++		return 0;
++
++	idx = (usage->hid & HID_USAGE) - 1;
++	if (idx >= ARRAY_SIZE(hori_taiko_buttons))
++		return -1;
++
++	hid_map_usage_clear(hi, usage, bit, max, EV_KEY,
++			    hori_taiko_buttons[idx]);
++	return 1;
++}
++
++static const struct hid_device_id hori_devices[] = {
++	{ HID_USB_DEVICE(USB_VENDOR_ID_HORI, USB_DEVICE_ID_HORI_TAIKO_SWITCH) },
++	{ }
++};
++MODULE_DEVICE_TABLE(hid, hori_devices);
++
++static struct hid_driver hori_driver = {
++	.name = "hori",
++	.id_table = hori_devices,
++	.input_mapping = hori_input_mapping,
++};
++module_hid_driver(hori_driver);
++
++MODULE_DESCRIPTION("HID driver for HORI Nintendo Switch licensed controllers");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/hid/hid-ids.h b/drivers/hid/hid-ids.h
+index 8b64cc2239..80a8a9f070 100644
+--- a/drivers/hid/hid-ids.h
++++ b/drivers/hid/hid-ids.h
+@@ -708,6 +708,7 @@
+ #define USB_DEVICE_ID_HARMONIX_WII_RB3_MPA_KEYBOARD_MODE	0x3338
+ 
+ #define USB_VENDOR_ID_HORI			0x0f0d
++#define USB_DEVICE_ID_HORI_TAIKO_SWITCH		0x00f0
+ #define USB_DEVICE_ID_HORI_WIRELESS_SWITCH_PAD	0x00f6
+ 
+ #define USB_VENDOR_ID_HP		0x03f0
+-- 
+2.56.1
+

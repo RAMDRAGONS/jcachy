@@ -54,7 +54,7 @@ diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c b/drivers/gpu/drm
 index eb00c62c6f72..030241039ae9 100644
 --- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
 +++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
-@@ -2949,6 +2949,9 @@ fill_dc_plane_info_and_addr(struct amdgpu_device *adev,
+@@ -3034,6 +3034,9 @@ fill_dc_plane_info_and_addr(struct amdgpu_device *adev,
  	case DRM_FORMAT_ARGB8888:
  		plane_info->format = SURFACE_PIXEL_FORMAT_GRPH_ARGB8888;
  		break;
@@ -88,7 +88,7 @@ diff --git a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c b/drivers/gpu/drm
 index 837af136464b..35ce12cb2f5c 100644
 --- a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
 +++ b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
-@@ -808,6 +808,9 @@ static enum dc_pixel_format convert_pixel_format_to_dalsurface(
+@@ -816,6 +816,9 @@ static enum dc_pixel_format convert_pixel_format_to_dalsurface(
  	case SURFACE_PIXEL_FORMAT_GRPH_ABGR8888:
  		dal_pixel_format = PIXEL_FORMAT_ARGB8888;
  		break;
@@ -98,7 +98,7 @@ index 837af136464b..35ce12cb2f5c 100644
  	case SURFACE_PIXEL_FORMAT_GRPH_ARGB2101010:
  		dal_pixel_format = PIXEL_FORMAT_ARGB2101010;
  		break;
-@@ -5691,6 +5694,7 @@ unsigned int resource_pixel_format_to_bpp(enum surface_pixel_format format)
+@@ -5839,6 +5842,7 @@ unsigned int resource_pixel_format_to_bpp(enum surface_pixel_format format)
  		return 16;
  	case SURFACE_PIXEL_FORMAT_GRPH_ARGB8888:
  	case SURFACE_PIXEL_FORMAT_GRPH_ABGR8888:
@@ -123,7 +123,7 @@ diff --git a/drivers/gpu/drm/amd/display/dc/dce/dce_mem_input.c b/drivers/gpu/dr
 index 168c2d0a5eaa..08cde29a4a7a 100644
 --- a/drivers/gpu/drm/amd/display/dc/dce/dce_mem_input.c
 +++ b/drivers/gpu/drm/amd/display/dc/dce/dce_mem_input.c
-@@ -593,6 +593,7 @@ static void program_grph_pixel_format(
+@@ -608,6 +608,7 @@ static void program_grph_pixel_format(
  		break;
  	case SURFACE_PIXEL_FORMAT_GRPH_ARGB8888:
  	case SURFACE_PIXEL_FORMAT_GRPH_ABGR8888:
@@ -243,7 +243,7 @@ diff --git a/drivers/gpu/drm/amd/display/dc/dpp/dcn50/dcn50_dpp.c b/drivers/gpu/
 index 04cab7d3a5c2..c17a0459a0c6 100644
 --- a/drivers/gpu/drm/amd/display/dc/dpp/dcn50/dcn50_dpp.c
 +++ b/drivers/gpu/drm/amd/display/dc/dpp/dcn50/dcn50_dpp.c
-@@ -119,6 +119,9 @@ void dpp50_dpp_setup(
+@@ -129,6 +129,9 @@ void dpp50_dpp_setup(
  	case SURFACE_PIXEL_FORMAT_GRPH_ABGR8888:
  		pixel_format = 8;
  		break;
@@ -367,7 +367,7 @@ diff --git a/drivers/gpu/drm/amd/display/dc/hubp/dcn50/dcn50_hubp.c b/drivers/gp
 index 0230f03590cf..688208c5bccc 100644
 --- a/drivers/gpu/drm/amd/display/dc/hubp/dcn50/dcn50_hubp.c
 +++ b/drivers/gpu/drm/amd/display/dc/hubp/dcn50/dcn50_hubp.c
-@@ -297,6 +297,10 @@ static void hubp50_program_pixel_format(
+@@ -306,6 +306,10 @@ static void hubp50_program_pixel_format(
  		REG_UPDATE(DCSURF_SURFACE_CONFIG,
  				SURFACE_PIXEL_FORMAT, 8);
  		break;

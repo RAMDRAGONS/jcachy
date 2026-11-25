@@ -26,7 +26,7 @@
 diff -uar a/arch/x86/Kconfig b/arch/x86/Kconfig
 --- a/arch/x86/Kconfig
 +++ b/arch/x86/Kconfig
-@@ -1225,7 +1225,7 @@
+@@ -1226,7 +1226,7 @@
  	default X86_LEGACY_VM86
  
  config X86_16BIT
@@ -35,7 +35,7 @@ diff -uar a/arch/x86/Kconfig b/arch/x86/Kconfig
  	default y
  	depends on MODIFY_LDT_SYSCALL
  	help
-@@ -1243,7 +1243,7 @@ config X86_ESPFIX64
+@@ -1244,7 +1244,7 @@ config X86_ESPFIX64
  	depends on X86_16BIT && X86_64
  
  config X86_VSYSCALL_EMULATION
@@ -83,7 +83,7 @@ diff -uar a/fs/Kconfig.binfmt b/fs/Kconfig.binfmt
 diff -uar a/init/Kconfig b/init/Kconfig
 --- a/init/Kconfig
 +++ b/init/Kconfig
-@@ -1724,7 +1724,7 @@
+@@ -1574,7 +1574,7 @@
  	  Only use this if you really know what you are doing.
  
  config UID16
@@ -105,7 +105,7 @@ diff -uar a/lib/Kconfig.debug b/lib/Kconfig.debug
  	depends on BUG && (GENERIC_BUG || HAVE_DEBUG_BUGVERBOSE)
  	default y
  	help
-@@ -949,7 +949,7 @@
+@@ -954,7 +954,7 @@
  	  regions to be regularly checked for invalid topology.
  
  config DEBUG_MEMORY_INIT
@@ -142,7 +142,7 @@ diff --git a/drivers/pci/pci.c b/drivers/pci/pci.c
 index d25122fbe98a..dbfb6aaa4a07 100644
 --- a/drivers/pci/pci.c
 +++ b/drivers/pci/pci.c
-@@ -64,7 +64,7 @@ struct pci_pme_device {
+@@ -65,7 +65,7 @@ struct pci_pme_device {
  	struct pci_dev *dev;
  };
  
@@ -340,7 +340,7 @@ diff --git a/arch/x86/include/asm/topology.h b/arch/x86/include/asm/topology.h
 index 2f0b6be8eaab..c31f81e2ea05 100644
 --- a/arch/x86/include/asm/topology.h
 +++ b/arch/x86/include/asm/topology.h
-@@ -274,6 +274,7 @@ extern unsigned int __read_mostly sysctl_sched_itmt_enabled;
+@@ -273,6 +273,7 @@ extern unsigned int __read_mostly sysctl_sched_itmt_enabled;
  
  /* Interface to set priority of a cpu */
  void sched_set_itmt_core_prio(int prio, int core_cpu);
@@ -375,7 +375,7 @@ index 57027bfed25f..596fd7fb7847 100644
  
  /* Boolean to track if system has ITMT capabilities */
  static bool __read_mostly sched_itmt_capable;
-@@ -167,7 +168,12 @@ void sched_clear_itmt_support(void)
+@@ -163,7 +164,12 @@ void sched_clear_itmt_support(void)
  
  int arch_asym_cpu_priority(int cpu)
  {
@@ -389,7 +389,7 @@ index 57027bfed25f..596fd7fb7847 100644
  }
  
  /**
-@@ -188,3 +194,24 @@ void sched_set_itmt_core_prio(int prio, int core_cpu)
+@@ -184,3 +190,24 @@ void sched_set_itmt_core_prio(int prio, int core_cpu)
  {
  	per_cpu(sched_core_priority, cpu) = prio;
  }
@@ -478,7 +478,7 @@ diff --git a/init/main.c b/init/main.c
 index aa21add5f7c5..715d57f58895 100644
 --- a/init/main.c
 +++ b/init/main.c
-@@ -1284,10 +1284,13 @@ static __init_or_module void
+@@ -1356,10 +1356,13 @@ static __init_or_module void
  trace_initcall_finish_cb(void *data, initcall_t fn, int ret)
  {
  	ktime_t rettime, *calltime = data;
@@ -501,7 +501,7 @@ index aa21add5f7c5..715d57f58895 100644
 
 --- linux-6.1/arch/x86/include/asm/msr-index.h~	2022-12-11 22:15:18.000000000 +0000
 +++ linux-6.1/arch/x86/include/asm/msr-index.h	2022-12-16 01:31:32.266119875 +0000
-@@ -589,7 +589,7 @@
+@@ -598,7 +598,7 @@
  #define HWP_MAX_PERF(x)			((x & 0xff) << 8)
  #define HWP_DESIRED_PERF(x)		((x & 0xff) << 16)
  #define HWP_ENERGY_PERF_PREFERENCE(x)	(((u64)x & 0xff) << 24)
@@ -517,7 +517,7 @@ diff --git a/include/net/sock.h b/include/net/sock.h
 index 4e787285fc66..3e045f6eb6ee 100644
 --- a/include/net/sock.h
 +++ b/include/net/sock.h
-@@ -1643,10 +1643,17 @@ static inline void sk_mem_charge(struct sock *sk, int size)
+@@ -1647,10 +1647,17 @@ static inline void sk_mem_charge(struct sock *sk, int size)
  
  static inline void sk_mem_uncharge(struct sock *sk, int size)
  {

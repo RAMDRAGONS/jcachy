@@ -99,7 +99,7 @@ diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
 index 0d0df986fa..1fa125b2d9 100644
 --- a/drivers/cpufreq/cpufreq.c
 +++ b/drivers/cpufreq/cpufreq.c
-@@ -2045,6 +2045,7 @@ bool cpufreq_driver_test_flags(u16 flags)
+@@ -2096,6 +2096,7 @@ bool cpufreq_driver_test_flags(u16 flags)
  {
  	return !!(cpufreq_driver->flags & flags);
  }
@@ -107,7 +107,7 @@ index 0d0df986fa..1fa125b2d9 100644
  
  /**
   * cpufreq_get_current_driver - Return the current driver's name.
-@@ -2252,6 +2253,7 @@ void cpufreq_driver_adjust_perf(struct cpufreq_policy *policy,
+@@ -2303,6 +2304,7 @@ void cpufreq_driver_adjust_perf(struct cpufreq_policy *policy,
  {
  	cpufreq_driver->adjust_perf(policy, min_perf, target_perf, max_perf, capacity);
  }
@@ -115,7 +115,7 @@ index 0d0df986fa..1fa125b2d9 100644
  
  /**
   * cpufreq_driver_has_adjust_perf - Check "direct fast switch" callback.
-@@ -2263,6 +2265,7 @@ bool cpufreq_driver_has_adjust_perf(void)
+@@ -2314,6 +2316,7 @@ bool cpufreq_driver_has_adjust_perf(void)
  {
  	return !!cpufreq_driver->adjust_perf;
  }
@@ -1362,7 +1362,7 @@ diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
 index 49ccd6f1c1..5bbf408b7b 100644
 --- a/kernel/sched/cpufreq_schedutil.c
 +++ b/kernel/sched/cpufreq_schedutil.c
-@@ -961,3 +961,58 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
+@@ -973,3 +973,58 @@ bool sugov_is_governor(struct cpufreq_policy *policy)
  }
  
  cpufreq_governor_init(schedutil_gov);

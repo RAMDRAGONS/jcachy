@@ -8,7 +8,7 @@ Signed-off-by: Mario Roy <...>
 diff -uarp a/Makefile b/Makefile
 --- a/Makefile
 +++ b/Makefile
-@@ -816,7 +816,7 @@ ifdef need-config
+@@ -817,7 +817,7 @@ ifdef need-config
  include $(objtree)/include/config/auto.conf
  endif
  
@@ -352,7 +352,7 @@ diff --git a/net/ipv4/tcp_input.c b/net/ipv4/tcp_input.c
 index adec44313772b..1c9db9a246f71 100644
 --- a/net/ipv4/tcp_input.c
 +++ b/net/ipv4/tcp_input.c
-@@ -5421,11 +5421,25 @@ static void tcp_ofo_queue(struct sock *sk)
+@@ -5430,11 +5430,25 @@ static void tcp_ofo_queue(struct sock *sk)
  static bool tcp_prune_ofo_queue(struct sock *sk, const struct sk_buff *in_skb);
  static int tcp_prune_queue(struct sock *sk, const struct sk_buff *in_skb);
  
@@ -401,6 +401,76 @@ index 0cf94c7a2c9c..20450f7a0c92 100644
 -- 
 2.40.2
 
+sched/uclamp: Fix race condition leading to imbalanced uclamp_rq
+https://lore.kernel.org/all/20261103005953.56271-2-qyousef@layalina.io/
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index d7c3b43158dea..c6780358a7975 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -2111,7 +2111,7 @@ static void uclamp_post_fork(struct task_struct *p)
+ 	uclamp_update_util_min_rt_default(p);
+ }
+ 
+-static void __init init_uclamp_rq(struct rq *rq)
++void init_uclamp_rq(struct rq *rq)
+ {
+ 	enum uclamp_id clamp_id;
+ 	struct uclamp_rq *uc_rq = rq->uclamp;
+diff --git a/kernel/sched/idle.c b/kernel/sched/idle.c
+index 76f3c84ca6846..84301fc49e699 100644
+--- a/kernel/sched/idle.c
++++ b/kernel/sched/idle.c
+@@ -506,6 +506,25 @@ static void set_next_task_idle(struct rq *rq, struct task_struct *next, enum snt
+ 	 * lost_idle_time of clock_pelt
+ 	 */
+ 	update_idle_rq_clock_pelt(rq);
++
++	/*
++	 * Due to a race condition when enabling sched_uclamp_used static key,
++	 * we can end up with imbalance where uclamp_rq_inc_id() has happened
++	 * on a CPU without uclamp_rq_dec_id() on another CPU that hasn't seen
++	 * the static key flipped. The race condition is unlikely, but ensure
++	 * the uclamp_rq() state is set properly on each entry to idle.
++	 *
++	 * The reset will cause the uclamp_max from uclamp_idle_value() to be
++	 * lost. Since we are imbalanced, hard to know what is right. So just
++	 * cleanup. This should be a transient error state once we recover
++	 * everything should work as expected.
++	 *
++	 * We need to be careful of some paths that can force idle with tasks
++	 * are still queued.
++	 */
++	if (uclamp_is_used() &&
++	    !rq->nr_running && unlikely(!uclamp_rq_is_idle(rq)))
++		init_uclamp_rq(rq);
+ }
+ 
+ struct task_struct *pick_task_idle(struct rq *rq, struct rq_flags *rf)
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 7d2ec527b8a25..d87bdbd2121df 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -3746,6 +3746,7 @@ static inline unsigned long cpu_util_rt(struct rq *rq)
+ #ifdef CONFIG_UCLAMP_TASK
+ 
+ unsigned long uclamp_eff_value(struct task_struct *p, enum uclamp_id clamp_id);
++void init_uclamp_rq(struct rq *rq);
+ 
+ /*
+  * When uclamp is compiled in, the aggregation at rq level is 'turned off'
+@@ -3844,6 +3845,8 @@ uclamp_eff_value(struct task_struct *p, enum uclamp_id clamp_id)
+ 	return SCHED_CAPACITY_SCALE;
+ }
+ 
++static inline void init_uclamp_rq(struct rq *rq) {}
++
+ static inline bool uclamp_rq_is_capped(struct rq *rq) { return false; }
+ 
+ static inline bool uclamp_is_used(void)
+-- 
+2.53.0
+
 sched/eevdf: Fix vprot across reweighting
 https://lore.kernel.org/all/20261016153721.7843-1-kayracizmeci@gmail.com/
 
@@ -408,7 +478,7 @@ diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
 index 0feec172fd37..fd8902813c9f 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -4906,12 +4906,15 @@ static void reweight_eevdf(struct cfs_rq *cfs_rq, struct sched_entity *se,
+@@ -4908,12 +4908,15 @@ static void reweight_eevdf(struct cfs_rq *cfs_rq, struct sched_entity *se,
  	update_load_set(&se->h_load, weight);
  
  	if (on_rq) {
@@ -426,7 +496,7 @@ index 0feec172fd37..fd8902813c9f 100644
  		if (!curr)
  			__enqueue_entity(cfs_rq, se);
  		cfs_rq->h_nr_queued++;
-@@ -8229,6 +8232,14 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+@@ -8221,6 +8224,14 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
  	if (!curr) {
  		reweight_eevdf(cfs_rq, se, weight, false);
  		place_entity(cfs_rq, se, flags | ENQUEUE_QUEUED);
@@ -451,7 +521,7 @@ diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
 index 3ebec186f982..3a21ceefcadf 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
-@@ -15564,6 +15564,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+@@ -15559,6 +15559,15 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
  	detach_task_cfs_rq(p);
  }
  
@@ -467,7 +537,7 @@ index 3ebec186f982..3a21ceefcadf 100644
  static void switched_to_fair(struct rq *rq, struct task_struct *p)
  {
  	WARN_ON_ONCE(p->se.sched_delayed);
-@@ -15954,6 +15963,7 @@ DEFINE_SCHED_CLASS(fair) = {
+@@ -15964,6 +15973,7 @@ DEFINE_SCHED_CLASS(fair) = {
  	.prio_changed		= prio_changed_fair,
  	.switching_from		= switching_from_fair,
  	.switched_from		= switched_from_fair,
@@ -546,49 +616,3 @@ https://github.com/CachyOS/linux/commit/ff4cf904d132b8
 #  	case 4:
 # -- 
 # 2.53.0
-
-Sync CACHY: drop unused modulo scheduling
-https://github.com/CachyOS/linux/commit/773080018867bfeff124768090ea991a6e070cd2
-
-diff --git a/Makefile b/Makefile
-index 2f74bb00be6551..6a512a4d45d28f 100644
---- a/Makefile
-+++ b/Makefile
-@@ -946,12 +946,6 @@ KBUILD_CFLAGS += -Os
- KBUILD_RUSTFLAGS += -Copt-level=s
- endif
- 
--# Perform swing modulo scheduling immediately before the first scheduling pass.
--# This pass looks at innermost loops and reorders their instructions by
--# overlapping different iterations.
--KBUILD_CFLAGS += $(call cc-option,-fmodulo-sched -fmodulo-sched-allow-regmoves -fivopts)
--KBUILD_CFLAGS += $(call cc-option,-mllvm -enable-pipeliner)
--
- # Always set `debug-assertions` and `overflow-checks` because their default
- # depends on `opt-level` and `debug-assertions`, respectively.
- KBUILD_RUSTFLAGS += -Cdebug-assertions=$(if $(CONFIG_RUST_DEBUG_ASSERTIONS),y,n)
--- 
-2.53.0
-
-Sync CACHY: kbuild: revert resolve_btfids from PKGBUILD
-https://github.com/CachyOS/linux/commit/9b3640276f8dd187487aa2c4e9bc8ecc338df7b1
-
-diff --git a/scripts/package/PKGBUILD b/scripts/package/PKGBUILD
-index e187908d3f1e6a..66e4b6a37783c2 100644
---- a/scripts/package/PKGBUILD
-+++ b/scripts/package/PKGBUILD
-@@ -90,11 +90,6 @@ _package-headers() {
- 		"${srctree}/scripts/package/install-extmod-build" "${builddir}"
- 	fi
- 
--	# required when DEBUG_INFO_BTF_MODULES is enabled
--	if [ -f tools/bpf/resolve_btfids/resolve_btfids ]; then
--		install -Dt "$builddir/tools/bpf/resolve_btfids" tools/bpf/resolve_btfids/resolve_btfids
--	fi
--
- 	echo "Installing System.map and config..."
- 	mkdir -p "${builddir}"
- 	cp System.map "${builddir}/System.map"
--- 
-2.53.0
-
